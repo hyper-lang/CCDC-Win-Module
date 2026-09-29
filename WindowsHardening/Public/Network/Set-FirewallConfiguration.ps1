@@ -74,81 +74,37 @@ function Set-FirewallConfiguration {
                     Write-Host "  [INFO] No ports specified - applying Deny All Inbound rule only" -ForegroundColor Yellow
                 }
             }
-            # Interactive
+            # Interactive: one multi-select prompt over the suggested ports; unlisted ports
+            # can be typed too. On a DC, Enter keeps the AD ports; elsewhere Enter = none.
             else {
-                # Interactive prompt for ports
+                $portOptions = @(Get-FirewallPortOptions -IsDC:$isDC)
+                $defaultKeys = @($portOptions | Where-Object { $_.Default } | ForEach-Object { $_.Key })
+                Write-Host "Suggested ports are common scored services and/or ports AD needs." -ForegroundColor DarkGray
+                if (-not $isDC) {
+                    Write-Host "AD ports are listed in case this box is joined to a domain later." -ForegroundColor DarkGray
+                }
+
                 $ready = $false
-                :outer while ($true) {
-                    $desigPorts = Read-CommaList -message "List needed port numbers for firewall config. Separate by commas."
-
-                    if ($isDC) {
-                        $usualPorts = @(53, 3389, 80, 445, 139, 22, 88, 67, 68, 135, 139, 389, 636, 3268, 3269, 464) | Sort-Object
-                        $commonScored = @(53, 3389, 80, 22)
-                        $commonADorDC = @(53, 139, 88, 67, 68, 135, 139, 389, 445, 636, 3268, 3269, 464)
-                    } else {
-                        $usualPorts = @(53, 3389, 80, 445, 139, 22, 88, 67, 68, 135, 139, 389, 636, 3268, 3269, 464) | Sort-Object
-                        $commonScored = @(53, 3389, 80, 22)
-                        $commonADorDC = @(139, 88, 67, 68, 135, 139, 389, 445, 636, 3268, 3269, 464)
-                    }
-
-                    Write-Host "All the following ports that we suggest are either common scored services, or usually needed for AD processes. We will say which is which. While this box isn't domain bound, AD ports have been left on the list in case this box gets bound later."
-
-                    foreach ($item in $usualPorts) {
-                        if ($desigPorts -notcontains $item) {
-                            if ($item -in $commonScored) {
-                                Write-Host "`nCommon Scored Service" -ForegroundColor Green
-                            }
-                            if ($item -in $commonADorDC) {
-                                if ($isDC -and ($item -eq 445 -or $item -eq 53)) {
-                                    Write-Host "`nCommon Scored Service" -ForegroundColor Green -NoNewline
-                                    Write-Host " and" -ForegroundColor Cyan -NoNewline
-                                    Write-Host " Common port needed for DC/AD processes" -ForegroundColor Red
-                                } elseif (-not $isDC -and $item -eq 445) {
-                                    Write-Host "`nCommon Scored Service" -ForegroundColor Green -NoNewline
-                                    Write-Host " and" -ForegroundColor Cyan -NoNewline
-                                    Write-Host " Common port needed for CD/AD processes" -ForegroundColor Red
-                                } else {
-                                    Write-Host "`nCommon port needed for DC/AD processes" -ForegroundColor Red
-                                }
-                            }
-                            Write-Host "Need " -NoNewline
-                            Write-Host "$item" -ForegroundColor Green -NoNewline
-                            Write-Host ", " -NoNewline
-                            Write-Host "$($script:HardeningContext.Ports.ports.$item.description)? " -ForegroundColor Cyan -NoNewline
-                            Write-Host "(y/n)" -ForegroundColor Yellow
-
-                            while($true) {
-                                $confirmation = Read-Host
-                                if ($confirmation.toLower() -eq "y") {
-                                    $desigPorts = @($desigPorts) + $item
-                                    break
-                                }
-                                if ($confirmation.toLower() -eq "n") {
-                                    break
-                                }
-                            }
-                        }
-                    }
+                while ($true) {
+                    $desigPorts = Read-Choice -Title "Firewall Ports" -Prompt "Ports to allow" -Options $portOptions `
+                        -Multiple -AllowCustom -AllowEmpty -AllowQuit -Default $defaultKeys `
+                        -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
+                    if ($null -eq $desigPorts) { break }
 
                     Write-Banner "Designated Ports" -Style Inline
-                    Write-Host (($desigPorts | Sort-Object) -join "`n")
-
-                    $confirmation = ""
-                    while($true) {
-                        $confirmation = Read-YesNo -Message "Are these ports correct (y/n)?"
-                        if ($confirmation.toLower() -eq "y") {
-                            $portsToAllow = $desigPorts
-                            $ready = $true
-                            break outer
-                        }
-                        if ($confirmation.toLower() -eq "n") {
-                            $ready = $false
-                            break
-                        }
+                    if ($desigPorts.Count -gt 0) {
+                        Write-Host (($desigPorts | Sort-Object) -join ', ')
+                    } else {
+                        Write-Host "(none - Deny All Inbound only)"
+                    }
+                    if ((Read-YesNo -Message "Are these ports correct (y/n)? ") -eq 'y') {
+                        $portsToAllow = $desigPorts
+                        $ready = $true
+                        break
                     }
                 }
 
-                if ($ready -eq $false) {
+                if (-not $ready) {
                     Write-Log -Level "INFO" -Message "Firewall configuration skipped by user"
                     throw "Operation skipped by user"
                 }

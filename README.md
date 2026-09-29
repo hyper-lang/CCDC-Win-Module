@@ -76,13 +76,14 @@ WindowsHardening/
 │   ├── Users/       Invoke-UserHardening, Set-ZuluPassword, Set-UserPassword,
 │   │                Initialize-CompetitionUsers, New-ADUserAccount, Remove-AdminUsers,
 │   │                Remove-RDPUsers, Add-RDPUsers, Protect-Mimikatz
-│   ├── Network/     Invoke-NetworkHardening, Set-FirewallConfiguration, Remove-RemoteManagement
+│   ├── Network/     Invoke-NetworkHardening, Set-FirewallConfiguration, Add-FirewallPort,
+│   │                Get-FirewallPortOptions, Remove-RemoteManagement
 │   ├── Services/    Invoke-ServiceHardening, Disable-UnusedNetworkProtocols, Update-SMB,
 │   │                Set-RestrictedExecutionPolicy
 │   ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
 │   ├── Patching/    Install-EternalBluePatch
-│   ├── Messages/    Write-Log, Show-OperationSummary, Start-HardeningLog, Read-YesNo,
-│   │                Read-CommaList, Read-SecretInput
+│   ├── Messages/    Write-Log, Show-OperationSummary, Start-HardeningLog, Write-Banner,
+│   │                Read-Choice, Read-YesNo, Read-SecretInput
 │   ├── Helpers/     One file per function, named after it: Initialize-System,
 │   │                Initialize-Context, Get-HardeningContext, Test-Prerequisites,
 │   │                Test-IsAdministrator, Test-IsDomainController, Get-OperatingSystemInfo,

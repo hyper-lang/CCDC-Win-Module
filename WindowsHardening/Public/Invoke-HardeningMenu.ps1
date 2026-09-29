@@ -4,8 +4,9 @@
         Interactive menu for running individual hardening steps or sections.
     .DESCRIPTION
         Loops until Q. Option 1 runs the full sequence (Invoke-WindowsHardening, which
-        starts a new log); 2-4 run one section; 5-19 run single steps. With -Force and
-        -Selection, runs one option and returns (no loop).
+        starts a new log); 2-4 run one section; 5-19 run single steps. Several options can
+        be given at once (e.g. 9,10,13 or 13-15) and run in the order typed. With -Force
+        and -Selection, runs one option and returns (no loop).
     #>
     [CmdletBinding()]
     param(
@@ -24,45 +25,30 @@
         [string]$SaltPhrase
     )
 
-    function Show-Menu {
-        Write-Host "`n==== Windows Hardening Menu ====" -ForegroundColor Green
-        Write-Host "Setup runs automatically on the first task; (A) re-runs it (new log file)." -ForegroundColor Yellow
-
-        Write-Host "`n--- Orchestrators (run a full section) ---" -ForegroundColor Magenta
-        Write-Host "  1) Harden Everything  - Invoke-WindowsHardening (all sections, new log)"
-        Write-Host "  2) Harden Users       - admin removal, passwords, RDP reset, credentials"
-        Write-Host "  3) Harden Network     - firewall + remove remote management"
-        Write-Host "  4) Harden Services    - SMB hardening + disable unused network protocols"
-
-        Write-Host "`n--- Users & Credentials ---" -ForegroundColor Cyan
-        Write-Host "  5) Change Passwords (Zulu - no initial setup)"
-        Write-Host "  6) Add Competition Users + rotate all passwords (Zulu -Initial)"
-        Write-Host "  7) Remove RDP Users   - clear Remote Desktop Users group"
-        Write-Host "  8) Add RDP Users      - interactively add users to RDP group"
-        Write-Host "  9) Remove Admin Users - strip extra local/AD admin privileges"
-        Write-Host " 10) Patch Mimikatz     - disable WDigest credential caching"
-
-        Write-Host "`n--- Network & Remote Access ---" -ForegroundColor Cyan
-        Write-Host " 11) Configure Firewall"
-        Write-Host " 12) Remove Remote Management - disable WinRM, RDP, Remote Registry, SSH"
-        Write-Host " 19) Add Firewall Ports - open extra ports without resetting the firewall"
-
-        Write-Host "`n--- Services ---" -ForegroundColor Cyan
-        Write-Host " 13) Disable Unused Network Protocols (IPv6, NetBIOS)"
-        Write-Host " 14) Upgrade SMB (enable v2/3, disable v1, enforce signing)"
-
-        Write-Host "`n--- Logging & Patching ---" -ForegroundColor Cyan
-        Write-Host " 15) Enable Advanced Auditing + Firewall Logging"
-        Write-Host " 16) Configure Splunk"
-        Write-Host " 17) Install EternalBlue Patch"
-        Write-Host " 18) Set Execution Policy to Restricted"
-
-        Write-Host "`n--- Misc ---" -ForegroundColor Cyan
-        Write-Host "  A) Re-run setup (check data files, new log file; OS/DC detection runs at import)"
-        Write-Host "  0) Print Execution Summary"
-        Write-Host ""
-        Write-Host "  Q) Quit" -ForegroundColor DarkGray
-    }
+    # Menu options, in display order. Key = what is typed (and what -Selection takes).
+    $menuOptions = @(
+        @{ Key = '1';  Section = 'Orchestrators (run a full section)'; Label = 'Harden Everything  - Invoke-WindowsHardening (all sections, new log)' }
+        @{ Key = '2';  Section = 'Orchestrators (run a full section)'; Label = 'Harden Users       - admin removal, passwords, RDP reset, credentials' }
+        @{ Key = '3';  Section = 'Orchestrators (run a full section)'; Label = 'Harden Network     - firewall + remove remote management' }
+        @{ Key = '4';  Section = 'Orchestrators (run a full section)'; Label = 'Harden Services    - SMB hardening + disable unused network protocols' }
+        @{ Key = '5';  Section = 'Users & Credentials'; Label = 'Change Passwords (Zulu - no initial setup)' }
+        @{ Key = '6';  Section = 'Users & Credentials'; Label = 'Add Competition Users + rotate all passwords (Zulu -Initial)' }
+        @{ Key = '7';  Section = 'Users & Credentials'; Label = 'Remove RDP Users   - clear Remote Desktop Users group' }
+        @{ Key = '8';  Section = 'Users & Credentials'; Label = 'Add RDP Users      - interactively add users to RDP group' }
+        @{ Key = '9';  Section = 'Users & Credentials'; Label = 'Remove Admin Users - strip extra local/AD admin privileges' }
+        @{ Key = '10'; Section = 'Users & Credentials'; Label = 'Patch Mimikatz     - disable WDigest credential caching' }
+        @{ Key = '11'; Section = 'Network & Remote Access'; Label = 'Configure Firewall' }
+        @{ Key = '12'; Section = 'Network & Remote Access'; Label = 'Remove Remote Management - disable WinRM, RDP, Remote Registry, SSH' }
+        @{ Key = '19'; Section = 'Network & Remote Access'; Label = 'Add Firewall Ports - open extra ports without resetting the firewall' }
+        @{ Key = '13'; Section = 'Services'; Label = 'Disable Unused Network Protocols (IPv6, NetBIOS)' }
+        @{ Key = '14'; Section = 'Services'; Label = 'Upgrade SMB (enable v2/3, disable v1, enforce signing)' }
+        @{ Key = '15'; Section = 'Logging & Patching'; Label = 'Enable Advanced Auditing + Firewall Logging' }
+        @{ Key = '16'; Section = 'Logging & Patching'; Label = 'Configure Splunk' }
+        @{ Key = '17'; Section = 'Logging & Patching'; Label = 'Install EternalBlue Patch' }
+        @{ Key = '18'; Section = 'Logging & Patching'; Label = 'Set Execution Policy to Restricted' }
+        @{ Key = 'A';  Section = 'Misc'; Label = 'Re-run setup (check data files, new log file; OS/DC detection runs at import)' }
+        @{ Key = '0';  Section = 'Misc'; Label = 'Print Execution Summary' }
+    )
 
     function Invoke-MenuAction {
         param(
@@ -130,8 +116,7 @@
                     Write-Host "This will disable WinRM, RDP, Remote Registry, and SSH." -ForegroundColor Yellow
                 }
                 Write-Host "If you are connected via RDP or WinRM, your session may end." -ForegroundColor Yellow
-                $confirm = Read-Host "Continue? (y/n)"
-                if ($confirm -eq 'y') {
+                if ((Read-YesNo -Message "Continue? (y/n) ") -eq 'y') {
                     Remove-RemoteManagement -SkipWinRM:$PreserveManagementPort
                 } else {
                     Write-Host "Cancelled." -ForegroundColor Yellow
@@ -139,13 +124,23 @@
             }
             '19' {
                 Write-Host "`n*** Adding Firewall Ports ***" -ForegroundColor Magenta
-                $portInput = if ($AdditionalPorts) { $AdditionalPorts -join ',' } else { Read-Host "Ports to open (comma-separated)" }
-                $protocolInput = Read-Host "Protocol - TCP, UDP, or Both (Enter for default: Both on a DC, TCP otherwise)"
-                if ([string]::IsNullOrWhiteSpace($protocolInput)) {
-                    Add-FirewallPort -Ports $portInput
-                } else {
-                    Add-FirewallPort -Ports $portInput -Protocol $protocolInput.Trim()
+                Initialize-System   # loads ports.json so the list shows port descriptions
+                $isDC = $script:HardeningContext.OS.IsDomainController
+                $portInput = if ($AdditionalPorts) { $AdditionalPorts } else {
+                    Read-Choice -Title "Ports to open" -Prompt "Ports" -Options @(Get-FirewallPortOptions) `
+                        -Multiple -AllowCustom -AllowQuit `
+                        -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
                 }
+                if (-not $portInput) {
+                    Write-Host "Cancelled." -ForegroundColor Yellow
+                    return
+                }
+                $protocol = Read-Choice -Prompt "Protocol" -Default $(if ($isDC) { 'B' } else { 'T' }) -Options @(
+                    @{ Key = 'T'; Label = 'TCP'; Value = 'TCP' }
+                    @{ Key = 'U'; Label = 'UDP'; Value = 'UDP' }
+                    @{ Key = 'B'; Label = 'Both'; Value = 'Both' }
+                )
+                Add-FirewallPort -Ports $portInput -Protocol $protocol
             }
 
             # -- Services -----------------------------------------------------
@@ -174,7 +169,12 @@
             '16' {
                 Write-Host "`n*** Configuring Splunk ***" -ForegroundColor Magenta
                 $ip = if ($SplunkIP) { $SplunkIP } else { Read-Host "`nInput IP address of Splunk Server" }
-                $SplunkVersion = Read-Host "`nInput OS Version (7, 8, 10, 11, 2012, 2016, 2019, 2022)"
+                # Default to this machine's version when it is one splunk.ps1 knows.
+                $versions = '7', '8', '10', '11', '2012', '2016', '2019', '2022'
+                $thisVersion = "$($script:HardeningContext.OS.OSFamily)" -replace '^(Server|Client)', ''
+                $SplunkVersion = Read-Choice -Prompt "OS version" -AllowCustom `
+                    -Options @($versions | ForEach-Object { @{ Key = $_; Label = $_ } }) `
+                    -Default $(if ($thisVersion -in $versions) { $thisVersion })
                 Install-Splunk -Version $SplunkVersion -IP $ip
             }
             '17' {
@@ -213,16 +213,20 @@
     }
 
     while ($true) {
-        Show-Menu
-        $choice = Read-Host "Selection"
-        if ($choice -match '^(?i)q$') { break }
+        Write-Banner "Windows Hardening Menu" -Style Inline -Color Green
+        Write-Host "Setup runs automatically on the first task; (A) re-runs it (new log file)." -ForegroundColor Yellow
+        $choices = Read-Choice -Prompt "Selection" -Options $menuOptions -Multiple -AllowQuit -QuitLabel 'Quit'
+        if ($null -eq $choices) { break }
 
-        try {
-            Invoke-MenuAction -Choice $choice
-        } catch {
-            Write-Host $_.Exception.Message -ForegroundColor Yellow
-            Write-Host "Error Occurred..." -ForegroundColor Red
-            Write-Log -Level "ERROR" -Message "Menu operation error: $($_.Exception.Message)" -Console
+        # Several options (e.g. 9,10,13) run in the order typed.
+        foreach ($choice in $choices) {
+            try {
+                Invoke-MenuAction -Choice $choice
+            } catch {
+                Write-Host $_.Exception.Message -ForegroundColor Yellow
+                Write-Host "Error Occurred..." -ForegroundColor Red
+                Write-Log -Level "ERROR" -Message "Menu operation error: $($_.Exception.Message)" -Console
+            }
         }
 
         Write-Host "`nPress Enter to return to menu..." -ForegroundColor DarkGray

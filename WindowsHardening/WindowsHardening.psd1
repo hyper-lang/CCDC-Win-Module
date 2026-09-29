@@ -29,6 +29,7 @@
         'Invoke-NetworkHardening'
         'Set-FirewallConfiguration'
         'Add-FirewallPort'
+        'Get-FirewallPortOptions'
         'Remove-RemoteManagement'
 
         # -- Public/Services/ ------------------------------------------------
@@ -51,7 +52,8 @@
         'Reset-OperationStatus'
         'Show-OperationSummary'
         'Read-YesNo'
-        'Read-CommaList'
+        'Read-Choice'
+        'Write-Banner'
         'Read-SecretInput'
 
         # -- Public/Helpers/ -------------------------------------------------

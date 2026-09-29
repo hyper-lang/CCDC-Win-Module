@@ -12,7 +12,7 @@ function Show-Users {
         $output = @()
         $isDC = $script:HardeningContext.OS.IsDomainController
 
-        Write-Host "`n==== Enabled Users ====" -ForegroundColor Green
+        Write-Banner "Enabled Users" -Style Inline -Color Green
         $enabledUsersOutput = "==== Enabled Users ===="
 
         if ($isDC) {
@@ -50,7 +50,7 @@ function Show-Users {
         }
         $output += $enabledUsersOutput
 
-        Write-Host "`n==== Disabled Users ====" -ForegroundColor Red
+        Write-Banner "Disabled Users" -Style Inline -Color Red
         $disabledUsersOutput = "==== Disabled Users ===="
 
         if ($isDC) {

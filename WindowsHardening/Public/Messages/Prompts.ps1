@@ -31,28 +31,6 @@ function Read-YesNo {
     }
 }
 
-function Read-CommaList {
-    [CmdletBinding()]
-    param(
-        [string]$Category,
-        [string]$Message
-    )
-
-    try {
-        $userInput = $null
-        if ($Message -ne "") {
-            $userInput = Read-Host -Prompt $Message
-            return $userInput.Split(",") | ForEach-Object { $_.Trim() }
-        } elseif ($Category -ne "") {
-            $userInput = Read-Host -Prompt "List $Category. Separate by commas if multiple. NO SPACES"
-            return $userInput.Split(",") | ForEach-Object { $_.Trim() }
-        }
-    } catch {
-        Write-Log -Level "ERROR" -Message "Error in Read-CommaList: $($_.Exception.Message)"
-        return @()
-    }
-}
-
 function Read-SecretInput {
     param([string]$Prompt)
     Write-Host -NoNewline $Prompt

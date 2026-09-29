@@ -20,7 +20,8 @@ function Read-Choice {
           - With -AllowCustom: a value that is not a key is passed through -ValidateCustom
             (if given) and returned as-is; -ValidateCustom may return a normalized value or
             throw to reject it.
-          - Enter with -Default returns the defaults; Q with -AllowQuit returns $null.
+          - Enter with -Default returns the defaults; Enter with -AllowEmpty (and no
+            defaults) returns an empty selection; Q with -AllowQuit returns $null.
         Invalid input is reported and the prompt repeats.
 
         Returns a single value, or an array with -Multiple (in the order typed, no
@@ -50,6 +51,9 @@ function Read-Choice {
 
         # Keys selected when the user just presses Enter.
         [string[]]$Default,
+
+        # With -Multiple: Enter (and no -Default) returns an empty array instead of re-prompting.
+        [switch]$AllowEmpty,
 
         [switch]$AllowQuit,
 
@@ -97,9 +101,16 @@ function Read-Choice {
     }
 
     $hints = @()
-    if ($Multiple) { $hints += 'one or more, e.g. 1,3,5-7' }
+    if ($Multiple) {
+        # Example built from the real keys, e.g. "1,3,5-7" for a menu or "22,53,67-80" for ports.
+        $numericKeys = @($items | Where-Object { $_.Key -match '^\d+$' } | ForEach-Object { $_.Key })
+        $example = if ($numericKeys.Count -ge 7) { "$($numericKeys[0]),$($numericKeys[2]),$($numericKeys[4])-$($numericKeys[6])" }
+                   elseif ($numericKeys.Count -ge 2) { "$($numericKeys[0]),$($numericKeys[1])" }
+        $hints += if ($example) { "one or more, e.g. $example" } else { 'one or more, separated by commas' }
+    }
     if ($AllowCustom) { $hints += 'or type values not listed' }
     if ($Default) { $hints += "Enter = defaults (*)" }
+    elseif ($AllowEmpty -and $Multiple) { $hints += 'Enter = none' }
     if ($hints) { Write-Host ("  (" + ($hints -join '; ') + ")") -ForegroundColor DarkGray }
 
     # -- Read until valid ----------------------------------------------------
@@ -113,6 +124,8 @@ function Read-Choice {
 
         if ($raw -eq '' -and $Default) {
             $tokens = $Default
+        } elseif ($raw -eq '' -and $AllowEmpty -and $Multiple) {
+            return ,@()
         } elseif ($AllowQuit -and $raw -match '^(?i)q$') {
             return $null
         } elseif ($raw -eq '') {
