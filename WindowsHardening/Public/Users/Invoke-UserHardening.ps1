@@ -59,9 +59,7 @@
         [string]$SaltPhrase
     )
 
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  User & Credential Hardening" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Banner "User & Credential Hardening"
 
     # Step 1: Remove extra admin accounts
     if (-not $SkipAdminRemoval) {

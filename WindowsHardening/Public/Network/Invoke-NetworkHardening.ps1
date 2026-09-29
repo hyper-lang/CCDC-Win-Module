@@ -31,6 +31,10 @@
     .PARAMETER FirewallPorts
         Ports to allow, passed to Set-FirewallConfiguration.
 
+    .PARAMETER AdditionalPorts
+        Extra ports allowed on top of -FirewallPorts or the defaults, passed to
+        Set-FirewallConfiguration.
+
     .PARAMETER SkipRemoteManagement
         Skip the Remove-RemoteManagement step entirely.  Use when you want to
         apply the firewall but leave remote channels open for continued access.
@@ -60,19 +64,19 @@
 
         [int[]]$FirewallPorts,
 
+        [int[]]$AdditionalPorts,
+
         [switch]$SkipRemoteManagement,
 
         [Alias('srdp')]
         [switch]$SkipRDP
     )
 
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Network & Remote-Access Hardening" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Banner "Network & Remote-Access Hardening"
 
     # Step 1: Firewall
     Write-Host "`n[Network 1/2] Configuring firewall..." -ForegroundColor Cyan
-    Set-FirewallConfiguration -NonInteractive:$NonInteractive -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort
+    Set-FirewallConfiguration -NonInteractive:$NonInteractive -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
 
     # Step 2: Remote management teardown
     if (-not $SkipRemoteManagement) {

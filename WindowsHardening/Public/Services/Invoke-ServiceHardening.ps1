@@ -37,9 +37,7 @@
         [switch]$SkipNetworkProtocols
     )
 
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Service Hardening" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Banner "Service Hardening"
 
     # Step 1: SMB hardening
     if (-not $SkipSMB) {

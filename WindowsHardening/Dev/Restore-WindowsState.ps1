@@ -92,7 +92,7 @@
         throw "Checksum file not found: $checksumFile - cannot verify backup integrity"
     }
 
-    Write-Host "`n=== Reverting Windows State ===" -ForegroundColor Cyan
+    Write-Banner "Reverting Windows State" -Style Inline
     Write-Host "Backup location: $BackupPath" -ForegroundColor Cyan
 
     # -- Verify checksums before restore ----------------------------------------
@@ -440,7 +440,7 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
     }
 
     # -- Summary ----------------------------------------------------------------
-    Write-Host "`n=== Revert Summary ===" -ForegroundColor Cyan
+    Write-Banner "Revert Summary" -Style Inline
     Write-Host "  Restored categories: $($restoredCategories.Count)/9" -ForegroundColor Cyan
     foreach ($cat in $restoredCategories) {
         Write-Host "    - $cat" -ForegroundColor Green

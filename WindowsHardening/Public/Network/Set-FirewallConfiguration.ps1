@@ -12,10 +12,20 @@
     - -NonInteractive without ports: Deny All only for Local; common AD/DC ports for AD.
     - Neither: prompts for ports and confirmation.
 
+    -AdditionalPorts are added on top of whichever set was chosen.
+
+    Existing "Allow <Protocol> <Port>" rules from earlier runs are re-enabled instead of
+    duplicated, and enabled Block rules that would override an Allow rule are reported.
+    To open a port later without resetting the firewall, use Add-FirewallPort.
+
     Domain-vs-Local branching is driven by $script:HardeningContext.OS.IsDomainController.
 
 .PARAMETER FirewallPorts
     Ports to allow. When given, no prompts are shown and no ports are added automatically.
+
+.PARAMETER AdditionalPorts
+    Extra ports to allow on top of -FirewallPorts, the DC defaults, or the ports chosen at
+    the prompt - e.g. a database or web port the box is known to need.
 
 .PARAMETER NonInteractive
     Never prompt (used by Invoke-WindowsHardening).
@@ -30,6 +40,8 @@ function Set-FirewallConfiguration {
     [CmdletBinding()]
     param(
         [int[]]$FirewallPorts,
+
+        [int[]]$AdditionalPorts,
 
         [switch]$NonInteractive,
 
@@ -104,9 +116,9 @@ function Set-FirewallConfiguration {
                             Write-Host ", " -NoNewline
                             Write-Host "$($script:HardeningContext.Ports.ports.$item.description)? " -ForegroundColor Cyan -NoNewline
                             Write-Host "(y/n)" -ForegroundColor Yellow
-                            $confirmation = Read-Host
 
                             while($true) {
+                                $confirmation = Read-Host
                                 if ($confirmation.toLower() -eq "y") {
                                     $desigPorts = @($desigPorts) + $item
                                     break
@@ -118,8 +130,8 @@ function Set-FirewallConfiguration {
                         }
                     }
 
-                    Write-Host "`n==== Designated Ports ====" -ForegroundColor Cyan
-                    Write-Host ($desigPorts -join "`n") | Sort-Object
+                    Write-Banner "Designated Ports" -Style Inline
+                    Write-Host (($desigPorts | Sort-Object) -join "`n")
 
                     $confirmation = ""
                     while($true) {
@@ -140,6 +152,13 @@ function Set-FirewallConfiguration {
                     Write-Log -Level "INFO" -Message "Firewall configuration skipped by user"
                     throw "Operation skipped by user"
                 }
+            }
+
+            # Add-on ports; also validates, de-duplicates, and drops blank prompt entries
+            $portsToAllow = @((ConvertTo-PortList -Ports (@($portsToAllow) + @($AdditionalPorts) | ForEach-Object { "$_" })) | Sort-Object -Unique)
+            if ($AdditionalPorts.Count -gt 0) {
+                Write-Host "  [INFO] Additional ports: $($AdditionalPorts -join ', ')" -ForegroundColor Yellow
+                Write-Log -Level "INFO" -Message "Additional firewall ports: $($AdditionalPorts -join ', ')"
             }
 
             # Backup current firewall config
@@ -165,9 +184,9 @@ function Set-FirewallConfiguration {
 
             # Keep WinRM (5985 HTTP, 5986 HTTPS) reachable when hardening over a remote session.
             if ($PreserveManagementPort) {
-                New-NetFirewallRule -DisplayName "Allow TCP 5986" -Direction Inbound -LocalPort 5986 -Action Allow -Protocol TCP -Enabled True
+                $null = Set-FirewallAllowRule -Port 5986 -Protocol TCP
                 Write-Log -Level "SUCCESS" -Message "Added TCP inbound rules for port 5986 (WinRM-HTTPS, preserved management port)"
-                New-NetFirewallRule -DisplayName "Allow TCP 5985" -Direction Inbound -LocalPort 5985 -Action Allow -Protocol TCP -Enabled True
+                $null = Set-FirewallAllowRule -Port 5985 -Protocol TCP
                 Write-Log -Level "SUCCESS" -Message "Added TCP inbound rules for port 5985 (WinRM-HTTP, preserved management port)"
             }
 
@@ -180,31 +199,16 @@ function Set-FirewallConfiguration {
                         continue
                     }
 
-                    # Try to get description from the ports data, fallback to switch
-                    $description = ""
-                    if ($null -ne $script:HardeningContext.Ports -and $null -ne $script:HardeningContext.Ports.ports -and $null -ne $script:HardeningContext.Ports.ports.$port) {
-                        $description = $script:HardeningContext.Ports.ports.$port.description
-                    } else {
-                        $description = switch ($port) {
-                            22 { "SSH" }
-                            53 { "DNS" }
-                            80 { "HTTP" }
-                            443 { "HTTPS" }
-                            3389 { "RDP" }
-                            5985 { "WinRM-HTTP" }
-                            5986 { "WinRM-HTTPS" }
-                            default { "Port-$port" }
-                        }
-                    }
+                    $description = Get-FirewallPortDescription -Port $port
 
                     if ($isDC) {
                         # AD: create both TCP and UDP Allow rules
-                        New-NetFirewallRule -DisplayName "Allow TCP $port" -Direction Inbound -LocalPort $port -Action Allow -Protocol TCP -Enabled True
-                        New-NetFirewallRule -DisplayName "Allow UDP $port" -Direction Inbound -LocalPort $port -Action Allow -Protocol UDP -Enabled True
+                        $null = Set-FirewallAllowRule -Port $port -Protocol TCP
+                        $null = Set-FirewallAllowRule -Port $port -Protocol UDP
                         Write-Log -Level "SUCCESS" -Message "Added inbound rules for port $port ($description)"
                     } else {
                         # Local: create TCP-only Allow rule
-                        New-NetFirewallRule -DisplayName "Allow TCP $port" -Direction Inbound -LocalPort $port -Action Allow -Protocol TCP -Enabled True
+                        $null = Set-FirewallAllowRule -Port $port -Protocol TCP
                         Write-Log -Level "SUCCESS" -Message "Added TCP inbound rules for port $port ($description)"
                     }
                 }

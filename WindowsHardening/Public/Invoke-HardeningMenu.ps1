@@ -4,7 +4,7 @@
         Interactive menu for running individual hardening steps or sections.
     .DESCRIPTION
         Loops until Q. Option 1 runs the full sequence (Invoke-WindowsHardening, which
-        starts a new log); 2-4 run one section; 5-18 run single steps. With -Force and
+        starts a new log); 2-4 run one section; 5-19 run single steps. With -Force and
         -Selection, runs one option and returns (no loop).
     #>
     [CmdletBinding()]
@@ -14,6 +14,8 @@
         [string]$Selection,
 
         [int[]]$FirewallPorts,
+
+        [int[]]$AdditionalPorts,
 
         [switch]$PreserveManagementPort,
 
@@ -43,6 +45,7 @@
         Write-Host "`n--- Network & Remote Access ---" -ForegroundColor Cyan
         Write-Host " 11) Configure Firewall"
         Write-Host " 12) Remove Remote Management - disable WinRM, RDP, Remote Registry, SSH"
+        Write-Host " 19) Add Firewall Ports - open extra ports without resetting the firewall"
 
         Write-Host "`n--- Services ---" -ForegroundColor Cyan
         Write-Host " 13) Disable Unused Network Protocols (IPv6, NetBIOS)"
@@ -73,7 +76,7 @@
             # -- Orchestrators ------------------------------------------------
             '1'  {
                 Write-Host "`n*** Harden Everything (all sections) ***" -ForegroundColor Magenta
-                Invoke-WindowsHardening -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
+                Invoke-WindowsHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
             }
             '2'  {
                 Write-Host "`n*** Harden Users & Credentials ***" -ForegroundColor Magenta
@@ -81,7 +84,7 @@
             }
             '3'  {
                 Write-Host "`n*** Harden Network & Remote Access ***" -ForegroundColor Magenta
-                Invoke-NetworkHardening -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort
+                Invoke-NetworkHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
             }
             '4'  {
                 Write-Host "`n*** Harden Services ***" -ForegroundColor Magenta
@@ -117,7 +120,7 @@
             # -- Network & Remote Access --------------------------------------
             '11' {
                 Write-Host "`n*** Configuring Firewall ***" -ForegroundColor Magenta
-                Set-FirewallConfiguration -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort
+                Set-FirewallConfiguration -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
             }
             '12' {
                 Write-Host "`n*** Removing Remote Management Channels ***" -ForegroundColor Magenta
@@ -132,6 +135,16 @@
                     Remove-RemoteManagement -SkipWinRM:$PreserveManagementPort
                 } else {
                     Write-Host "Cancelled." -ForegroundColor Yellow
+                }
+            }
+            '19' {
+                Write-Host "`n*** Adding Firewall Ports ***" -ForegroundColor Magenta
+                $portInput = if ($AdditionalPorts) { $AdditionalPorts -join ',' } else { Read-Host "Ports to open (comma-separated)" }
+                $protocolInput = Read-Host "Protocol - TCP, UDP, or Both (Enter for default: Both on a DC, TCP otherwise)"
+                if ([string]::IsNullOrWhiteSpace($protocolInput)) {
+                    Add-FirewallPort -Ports $portInput
+                } else {
+                    Add-FirewallPort -Ports $portInput -Protocol $protocolInput.Trim()
                 }
             }
 

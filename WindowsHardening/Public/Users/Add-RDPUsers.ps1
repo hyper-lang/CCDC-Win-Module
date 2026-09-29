@@ -6,7 +6,7 @@ function Add-RDPUsers {
     )
 
     Invoke-HardeningOperation -OperationName 'Add RDP Users' -ScriptBlock {
-        Write-Host "`n=== Add Users to Remote Desktop Users Group ===" -ForegroundColor Cyan
+        Write-Banner "Add Users to Remote Desktop Users Group" -Style Inline
 
         $isDC = $script:HardeningContext.OS.IsDomainController
         $usernames = @()
@@ -74,7 +74,7 @@ function Add-RDPUsers {
             }
         }
 
-        Write-Host "`n=== Summary ===" -ForegroundColor Cyan
+        Write-Banner "Summary" -Style Inline
         Write-Host "  Successfully added: $successCount user(s)" -ForegroundColor Green
         if ($failedCount -gt 0) {
             Write-Host "  Failed to add: $failedCount user(s)" -ForegroundColor Red

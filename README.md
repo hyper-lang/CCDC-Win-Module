@@ -329,6 +329,23 @@ Set-FirewallConfiguration -FirewallPorts 80,443
 
 # Keep WinRM (5985/5986) open so applying over WinRM does not lock you out
 Set-FirewallConfiguration -FirewallPorts 80,443 -PreserveManagementPort
+
+# Keep the defaults (AD ports on a DC) and add a database + web port on top
+Set-FirewallConfiguration -NonInteractive -AdditionalPorts 1433,8080
+```
+
+Re-running does not duplicate rules: an existing `Allow <Protocol> <Port>` rule is
+re-enabled instead. Any enabled inbound Block rule covering an allowed port is
+reported, since Block rules override Allow rules.
+
+### `Add-FirewallPort`
+
+Opens extra inbound ports on an already-hardened firewall without resetting it
+(menu option 19). Existing rules for the port are reused, not duplicated.
+
+```powershell
+Add-FirewallPort -Ports 1433               # TCP (TCP + UDP on a DC)
+Add-FirewallPort -Ports "161" -Protocol UDP
 ```
 
 > `-NonInteractive` (never prompt; AD ports on a DC, Deny All only otherwise)
@@ -386,6 +403,7 @@ Commonly used parameters and their short aliases:
 | `-SkipPasswordChange` | `-sp` | `Invoke-WindowsHardening` |
 | `-SkipRDP` | `-srdp` | `Invoke-WindowsHardening` |
 | `-FirewallPorts` | `-f` | `Invoke-WindowsHardening`, `Set-FirewallConfiguration` |
+| `-AdditionalPorts` | `-ap` | `Invoke-WindowsHardening` |
 | `-SaltPhrase` | `-s` | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Invoke-UserHardening` |
 | `-LogPath` | — | `Invoke-WindowsHardening` (default `C:\Windows\Logs\Hardening`) |
 | `-PreserveManagementPort` | — | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Set-FirewallConfiguration` |
@@ -397,6 +415,7 @@ Commonly used parameters and their short aliases:
 | `-SkipPasswordChange` / `-sp` | switch | `$false` | Skip Zulu account creation and password rotation |
 | `-SkipRDP` / `-srdp` | switch | `$false` | Skip the RDP group reset and leave RDP enabled |
 | `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
+| `-AdditionalPorts` / `-ap` | string[] | — | Extra ports allowed on top of `-FirewallPorts` or the defaults |
 | `-SaltPhrase` / `-s` | string | — | Salt phrase for Zulu passwords (else Zulu prompts) |
 | `-LogPath` | string | `C:\Windows\Logs\Hardening` | Log output directory |
 | `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled) |
@@ -428,8 +447,9 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Description |
 |---|---|---|
 | `-Force` | switch | Dispatch a single selection and exit (no menu loop) |
-| `-Selection` | string | Menu option when `-Force` (`0`, `A`, `1`–`18`) |
+| `-Selection` | string | Menu option when `-Force` (`0`, `A`, `1`–`19`) |
 | `-FirewallPorts` | int[] | Ports for the firewall options |
+| `-AdditionalPorts` | int[] | Extra ports for the firewall options (and the default for option 19) |
 | `-PreserveManagementPort` | switch | Keep WinRM reachable in the firewall/network options |
 | `-SplunkIP` | string | Splunk server IP (else prompts) |
 | `-SaltPhrase` | string | Salt phrase for the Zulu options (else prompts) |
@@ -445,6 +465,7 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Description |
 |---|---|---|
 | `-FirewallPorts` | int[] | Ports to allow |
+| `-AdditionalPorts` | int[] | Extra ports allowed on top of whichever set was chosen |
 | `-NonInteractive` | switch | Never prompt (used by `Invoke-WindowsHardening`) |
 | `-PreserveManagementPort` | switch | Keep Allow rules for WinRM (TCP 5985/5986) |
 

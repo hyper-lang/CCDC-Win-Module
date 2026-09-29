@@ -124,9 +124,7 @@ function Reset-OperationStatus {
 }
 
 function Show-OperationSummary {
-    Write-Host "`n" + ("=" * 60) -ForegroundColor Cyan
-    Write-Host "### Script Execution Summary ###" -ForegroundColor Green
-    Write-Host ("=" * 60) -ForegroundColor Cyan
+    Write-Banner "Script Execution Summary" -Width 60
     Write-Log -Level "INFO" -Message "=== Execution Summary ===" -Console
 
     if ($script:HardeningContext.OS) {
@@ -157,9 +155,7 @@ function Show-OperationSummary {
         Write-Log -Level "INFO" -Message "$($entry.Key): $status"
     }
 
-    Write-Host "`n" + ("=" * 60) -ForegroundColor Cyan
-    Write-Host "### Operation Statistics ###" -ForegroundColor Cyan
-    Write-Host ("=" * 60) -ForegroundColor Cyan
+    Write-Banner "Operation Statistics" -Width 60 -Color Cyan
     Write-Host "Total Operations Attempted: $($script:OperationResults.Total)" -ForegroundColor White
     Write-Host "  Successful Operations: $($script:OperationResults.Successful)" -ForegroundColor Green
     Write-Host "  Failed Operations: $($script:OperationResults.Failed)" -ForegroundColor Red
@@ -180,7 +176,7 @@ function Show-OperationSummary {
     }
 
     if ($script:OperationResults.Warnings.Count -gt 0) {
-        Write-Host "`n### Warnings ###" -ForegroundColor Yellow
+        Write-Banner "Warnings" -Style Inline -Color Yellow
         foreach ($warning in $script:OperationResults.Warnings) {
             Write-Host "  - $warning" -ForegroundColor Yellow
             Write-Log -Level "WARNING" -Message "Warning: $warning" -Console

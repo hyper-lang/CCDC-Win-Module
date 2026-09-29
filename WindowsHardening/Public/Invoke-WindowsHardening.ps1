@@ -26,6 +26,9 @@
     .PARAMETER FirewallPorts
         Ports to allow ("80, 443", @("80","443"), or 80,443). If omitted, a domain
         controller gets the common AD ports and any other machine gets Deny All only. Alias: -f.
+    .PARAMETER AdditionalPorts
+        Extra ports to allow on top of -FirewallPorts or the defaults above - e.g. a database
+        or web port the box needs. Same formats as -FirewallPorts. Alias: -ap.
     .PARAMETER SaltPhrase
         Salt phrase for Zulu password generation. If omitted, Zulu prompts for it. Alias: -s.
     .PARAMETER LogPath
@@ -53,6 +56,9 @@
         [Alias("f")]
         [string[]]$FirewallPorts,
 
+        [Alias("ap")]
+        [string[]]$AdditionalPorts,
+
         [Alias("s")]
         [string]$SaltPhrase,
 
@@ -68,6 +74,7 @@
     # -- FirewallPorts parsing ----------------------------------------------
     try {
         $ports = ConvertTo-PortList -Ports $FirewallPorts
+        $extraPorts = ConvertTo-PortList -Ports $AdditionalPorts
     } catch {
         Write-Host "[ERROR] Failed to parse FirewallPorts parameter: $($_.Exception.Message)" -ForegroundColor Red
         throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
@@ -75,14 +82,15 @@
     if ($ports.Count -gt 0) {
         Write-Host "[INFO] Firewall ports provided via parameter: $($ports -join ', ')" -ForegroundColor Cyan
     }
+    if ($extraPorts.Count -gt 0) {
+        Write-Host "[INFO] Additional firewall ports: $($extraPorts -join ', ')" -ForegroundColor Cyan
+    }
 
     # $global:Error: inside a module, $Error is a separate module-scoped (empty) collection.
     $errorCountAtStart = $global:Error.Count
 
     # -- Banner --------------------------------------------------------------
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Windows Hardening MODULE v1.0" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Banner "Windows Hardening MODULE v1.0"
 
     # -- Initialize (OS detection, logging, context) -------------------------
     Initialize-System -Force -LogPath $LogPath
@@ -107,15 +115,11 @@
 
     # -- AD status display (detected at module import) ------------------------
     if ($osInfo) {
-        Write-Host "`n========================================" -ForegroundColor Cyan
         if ($osInfo.IsDomainJoined) {
-            Write-Host "  Active Directory Status: DOMAIN JOINED$(if ($osInfo.IsDomainController) { ' (Domain Controller)' })" -ForegroundColor Green
-            Write-Host "  Domain: $($osInfo.Domain)" -ForegroundColor White
+            Write-Banner "Active Directory Status: DOMAIN JOINED$(if ($osInfo.IsDomainController) { ' (Domain Controller)' })" -Body "Domain: $($osInfo.Domain)"
         } else {
-            Write-Host "  Active Directory Status: NOT DOMAIN JOINED" -ForegroundColor Yellow
-            Write-Host "  Workgroup: $($osInfo.Workgroup)" -ForegroundColor White
+            Write-Banner "Active Directory Status: NOT DOMAIN JOINED" -Body "Workgroup: $($osInfo.Workgroup)" -Color Yellow
         }
-        Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
     }
 
@@ -143,7 +147,7 @@
     Invoke-ServiceHardening
 
     Write-Host "`nStep 3/5: Hardening network and remote access..." -ForegroundColor Cyan
-    Invoke-NetworkHardening -NonInteractive -FirewallPorts $ports -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
+    Invoke-NetworkHardening -NonInteractive -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
 
     Write-Host "`nStep 4/5: Configuring Splunk..." -ForegroundColor Cyan
     if ($SkipSplunk) {

@@ -11,7 +11,7 @@ function Test-Prerequisites {
     [CmdletBinding()]
     param()
 
-    Write-Host "`n=== Pre-flight Checks ===" -ForegroundColor Cyan
+    Write-Banner "Pre-flight Checks" -Style Inline
     Write-Log -Level "INFO" -Message "=== Pre-flight Checks ===" -Console
 
     $allChecksPassed = $true
@@ -64,7 +64,7 @@ function Test-Prerequisites {
         Write-Log -Level "WARNING" -Message "Could not determine PowerShell version"
     }
 
-    Write-Host "`n=== Pre-flight Checks Complete ===" -ForegroundColor Cyan
+    Write-Banner "Pre-flight Checks Complete" -Style Inline
     Write-Log -Level "INFO" -Message "=== Pre-flight Checks Complete ===" -Console
 
     if (-not $allChecksPassed) {
