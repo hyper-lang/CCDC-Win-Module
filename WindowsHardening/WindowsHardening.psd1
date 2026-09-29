@@ -47,7 +47,7 @@
 
         # -- Public/Messages/ - logging & prompts ----------------------------
         'Start-HardeningLog'
-        'Write-Log'
+        'Write-Status'
         'Set-OperationStatus'
         'Reset-OperationStatus'
         'Show-OperationSummary'

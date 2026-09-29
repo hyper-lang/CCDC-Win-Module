@@ -14,7 +14,7 @@ function Add-RDPUsers {
         if ($Users -and $Users.Count -gt 0) {
             $usernames = $Users
         } elseif ($Force) {
-            Write-Host "  [INFO] -Force specified with no users; nothing to add." -ForegroundColor Yellow
+            Write-Status "-Force specified with no users; nothing to add."
             return
         } else {
             $userCount = 0
@@ -25,10 +25,10 @@ function Add-RDPUsers {
                     if ($userCount -gt 0) {
                         break
                     } else {
-                        Write-Host "  [ERROR] Please enter a positive number greater than 0." -ForegroundColor Red
+                        Write-Status -Level Error "Please enter a positive number greater than 0."
                     }
                 } catch {
-                    Write-Host "  [ERROR] Invalid input. Please enter a valid number." -ForegroundColor Red
+                    Write-Status -Level Error "Invalid input. Please enter a valid number."
                 }
             }
 
@@ -46,7 +46,7 @@ function Add-RDPUsers {
 
         foreach ($username in $usernames) {
             if ([string]::IsNullOrWhiteSpace($username)) {
-                Write-Host "  [WARNING] Username was empty, skipping..." -ForegroundColor Yellow
+                Write-Status -Level Warning "Username was empty, skipping..."
                 $failedCount++
                 continue
             }
@@ -57,19 +57,17 @@ function Add-RDPUsers {
                 } else {
                     Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $username -ErrorAction Stop
                 }
-                Write-Host "  [SUCCESS] Added user '$username' to Remote Desktop Users group" -ForegroundColor Green
-                Write-Log -Level 'SUCCESS' -Message "Added user '$username' to Remote Desktop Users group"
+                Write-Status -Level Success "Added user '$username' to Remote Desktop Users group"
                 $successCount++
             } catch {
                 $errorMessage = $_.Exception.Message
-                Write-Host "  [ERROR] Could not add user '$username' to Remote Desktop Users group: $errorMessage" -ForegroundColor Red
-                Write-Log -Level 'ERROR' -Message "Could not add user '$username' to Remote Desktop Users group: $errorMessage"
+                Write-Status -Level Error "Could not add user '$username' to Remote Desktop Users group: $errorMessage"
                 $failedCount++
 
                 if ($errorMessage -like '*not found*' -or $errorMessage -like '*does not exist*') {
-                    Write-Host "    [INFO] The user '$username' does not exist on the local system or domain." -ForegroundColor Yellow
+                    Write-Status "The user '$username' does not exist on the local system or domain."
                 } elseif ($errorMessage -like '*already*' -or $errorMessage -like '*member*') {
-                    Write-Host "    [INFO] The user '$username' is already a member of the Remote Desktop Users group." -ForegroundColor Yellow
+                    Write-Status "The user '$username' is already a member of the Remote Desktop Users group."
                 }
             }
         }
@@ -79,7 +77,7 @@ function Add-RDPUsers {
         if ($failedCount -gt 0) {
             Write-Host "  Failed to add: $failedCount user(s)" -ForegroundColor Red
         }
-        Write-Host "`nRDP user addition process completed." -ForegroundColor Green
-        Write-Log -Level 'SUCCESS' -Message "Add RDP Users completed: $successCount succeeded, $failedCount failed"
+        Write-Host ""
+        Write-Status -Level Success "RDP user addition process completed." -LogMessage "Add RDP Users completed: $successCount succeeded, $failedCount failed"
     }
 }

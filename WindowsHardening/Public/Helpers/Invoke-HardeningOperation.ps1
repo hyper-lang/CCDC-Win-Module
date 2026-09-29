@@ -16,52 +16,51 @@ function Invoke-HardeningOperation {
         [string]$ProgressMessage = ""
     )
 
+    # Step label (e.g. "Users 2/4") set by the calling orchestrator via
+    # $script:NextStepLabel, for this operation only. Taken before Initialize-System,
+    # whose own "Initialize Context" operation must not pick it up.
+    $stepLabel = $script:NextStepLabel
+    $script:NextStepLabel = $null
+
     Initialize-System
 
     $script:OperationResults.Total++
+    $header = if ($stepLabel) { "[$stepLabel] $OperationName" } else { "[EXECUTING] $OperationName..." }
 
     # Check OS compatibility
     if ($OSCompatibility.Count -gt 0) {
         if ($script:HardeningContext.OS.OSFamily -notin $OSCompatibility) {
-            $message = "[SKIPPED] Operation '$OperationName' is not compatible with $($script:HardeningContext.OS.OSVersion) (OS Family: $($script:HardeningContext.OS.OSFamily))"
-            Write-Host $message -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message $message -Console
+            $message = "Operation '$OperationName' is not compatible with $($script:HardeningContext.OS.OSVersion) (OS Family: $($script:HardeningContext.OS.OSFamily))"
+            Write-Host "`n$header" -ForegroundColor Cyan
+            Write-Status -Level Skip $message
             $script:OperationResults.Skipped++
-            $script:OperationResults.Warnings += $message
+            $script:OperationResults.Warnings += "[SKIPPED] $message"
             Set-OperationStatus $OperationName "Skipped - OS incompatible ($($script:HardeningContext.OS.OSFamily))"
             return
         }
     }
 
     try {
-        Write-Host "`n[EXECUTING] $OperationName..." -ForegroundColor Cyan
+        Write-Host "`n$header" -ForegroundColor Cyan
+        Write-Status -LogOnly "Starting operation: $OperationName$(if ($stepLabel) { " ($stepLabel)" })"
         if ($ProgressMessage) {
-            Write-Host "[INFO] $ProgressMessage" -ForegroundColor White
+            Write-Status $ProgressMessage
         }
-        Write-Log -Level "INFO" -Message "Starting operation: $OperationName" -Console
         if ($script:HardeningContext.OS) {
-            Write-Host "[INFO] Applying configuration for $($script:HardeningContext.OS.OSVersion)..." -ForegroundColor DarkGray
+            Write-Status "Applying configuration for $($script:HardeningContext.OS.OSVersion)..." -NoLog
         }
 
         & $ScriptBlock
 
-        $message = "[SUCCESS] $OperationName completed successfully"
-        Write-Host $message -ForegroundColor Green
-        Write-Log -Level "SUCCESS" -Message $message -Console
+        Write-Status -Level Success "$OperationName completed successfully"
         $script:OperationResults.Successful++
         Set-OperationStatus $OperationName "Executed successfully"
 
     } catch {
-        $errorMessage = "[FAILED] $OperationName : $($_.Exception.Message)"
-        Write-Host $errorMessage -ForegroundColor Red
-        Write-Host "[ERROR DETAILS] Exception Type: $($_.Exception.GetType().FullName)" -ForegroundColor DarkRed
+        Write-Status -Level Error "$OperationName : $($_.Exception.Message)"
+        Write-Status -Level Error -Tag 'ERROR DETAILS' "Exception Type: $($_.Exception.GetType().FullName)"
         if ($_.Exception.InnerException) {
-            Write-Host "[ERROR DETAILS] Inner Exception: $($_.Exception.InnerException.Message)" -ForegroundColor DarkRed
-        }
-        Write-Log -Level "ERROR" -Message $errorMessage -Console
-        Write-Log -Level "ERROR" -Message "Exception Type: $($_.Exception.GetType().FullName)"
-        if ($_.Exception.InnerException) {
-            Write-Log -Level "ERROR" -Message "Inner Exception: $($_.Exception.InnerException.Message)"
+            Write-Status -Level Error -Tag 'ERROR DETAILS' "Inner Exception: $($_.Exception.InnerException.Message)"
         }
 
         $script:OperationResults.Failed++

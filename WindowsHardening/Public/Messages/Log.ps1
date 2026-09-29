@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# Log.ps1 - Log file setup, Write-Log, and the per-function execution summary.
+# Log.ps1 - Log file setup, Write-Log (internal; use Write-Status), and the execution summary.
 
 function Start-HardeningLog {
     [CmdletBinding()]
@@ -62,38 +62,30 @@ Script Version: 2.0
 }
 
 function Write-Log {
+    <#
+    .SYNOPSIS
+        Appends a timestamped line to the log file. Internal: call Write-Status instead,
+        which also handles the screen (Write-Status -LogOnly for log-only details).
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL")]
+        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL", "SKIP")]
         [string]$Level,
 
         [Parameter(Mandatory=$true)]
-        [string]$Message,
-
-        [switch]$Console
+        [AllowEmptyString()]
+        [string]$Message
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "[$timestamp] [$Level] $Message"
-
-    if ($script:LogFile) {
-        try {
-            $logEntry | Out-File -FilePath $script:LogFile -Append -Encoding UTF8
-        } catch {
-            Write-Warning "Failed to write to log file: $($_.Exception.Message)"
-        }
+    if (-not $script:LogFile) {
+        return
     }
-
-    if ($Console -or $Level -in "ERROR", "CRITICAL", "WARNING") {
-        $color = switch ($Level) {
-            "SUCCESS" { "Green" }
-            "WARNING" { "Yellow" }
-            "ERROR"   { "Red" }
-            "CRITICAL"{ "Red" }
-            default   { "White" }
-        }
-        Write-Host $logEntry -ForegroundColor $color
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    try {
+        "[$timestamp] [$Level] $Message" | Out-File -FilePath $script:LogFile -Append -Encoding UTF8
+    } catch {
+        Write-Warning "Failed to write to log file: $($_.Exception.Message)"
     }
 }
 
@@ -125,7 +117,6 @@ function Reset-OperationStatus {
 
 function Show-OperationSummary {
     Write-Banner "Script Execution Summary" -Width 60
-    Write-Log -Level "INFO" -Message "=== Execution Summary ===" -Console
 
     if ($script:HardeningContext.OS) {
         $osInfo = $script:HardeningContext.OS
@@ -134,7 +125,7 @@ function Show-OperationSummary {
         Write-Host "  Build: $($osInfo.BuildNumber)" -ForegroundColor White
         Write-Host "  Edition: $($osInfo.Edition)" -ForegroundColor White
         Write-Host "  Is Server: $($osInfo.IsServer)" -ForegroundColor White
-        Write-Log -Level "INFO" -Message "OS: $($osInfo.OSVersion) (Build $($osInfo.BuildNumber))"
+        Write-Status -LogOnly "OS: $($osInfo.OSVersion) (Build $($osInfo.BuildNumber))"
     }
 
     Write-Host "`nIndividual Operations:" -ForegroundColor Yellow
@@ -152,7 +143,7 @@ function Show-OperationSummary {
         }
         Write-Host "  $($entry.Key): " -NoNewline -ForegroundColor White
         Write-Host $status -ForegroundColor $color
-        Write-Log -Level "INFO" -Message "$($entry.Key): $status"
+        Write-Status -LogOnly "$($entry.Key): $status"
     }
 
     Write-Banner "Operation Statistics" -Width 60 -Color Cyan
@@ -161,17 +152,17 @@ function Show-OperationSummary {
     Write-Host "  Failed Operations: $($script:OperationResults.Failed)" -ForegroundColor Red
     Write-Host "  Skipped Operations: $($script:OperationResults.Skipped)" -ForegroundColor Yellow
 
-    Write-Log -Level "INFO" -Message "Total Operations: $($script:OperationResults.Total)" -Console
-    Write-Log -Level "INFO" -Message "Successful: $($script:OperationResults.Successful)" -Console
-    Write-Log -Level "INFO" -Message "Failed: $($script:OperationResults.Failed)" -Console
-    Write-Log -Level "INFO" -Message "Skipped: $($script:OperationResults.Skipped)" -Console
+    Write-Status -LogOnly "Total Operations: $($script:OperationResults.Total)"
+    Write-Status -LogOnly "Successful: $($script:OperationResults.Successful)"
+    Write-Status -LogOnly "Failed: $($script:OperationResults.Failed)"
+    Write-Status -LogOnly "Skipped: $($script:OperationResults.Skipped)"
 
     if ($script:OperationResults.Skipped -gt 0) {
         Write-Host "`nSkipped Operations (with reasons):" -ForegroundColor Yellow
         $skippedOps = $script:log.GetEnumerator() | Where-Object { $_.Value -like "*Skipped*" }
         foreach ($op in $skippedOps) {
             Write-Host "  - $($op.Key): $($op.Value)" -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "Skipped: $($op.Key) - $($op.Value)"
+            Write-Status -Level Skip -LogOnly "$($op.Key) - $($op.Value)"
         }
     }
 
@@ -179,7 +170,7 @@ function Show-OperationSummary {
         Write-Banner "Warnings" -Style Inline -Color Yellow
         foreach ($warning in $script:OperationResults.Warnings) {
             Write-Host "  - $warning" -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "Warning: $warning" -Console
+            Write-Status -Level Warning -LogOnly "$warning"
         }
     }
 

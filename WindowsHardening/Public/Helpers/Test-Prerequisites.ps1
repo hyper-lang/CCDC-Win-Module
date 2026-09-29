@@ -11,61 +11,49 @@ function Test-Prerequisites {
     [CmdletBinding()]
     param()
 
-    Write-Banner "Pre-flight Checks" -Style Inline
-    Write-Log -Level "INFO" -Message "=== Pre-flight Checks ===" -Console
+    Write-Banner "Pre-flight Checks" -Style Inline -Log
 
     $allChecksPassed = $true
 
     # Check administrator privileges
     try {
         if (-not (Test-IsAdministrator)) {
-            Write-Host "[FAIL] Script must be run as Administrator" -ForegroundColor Red
-            Write-Log -Level "ERROR" -Message "Administrator privileges required" -Console
+            Write-Status -Level Error "Script must be run as Administrator" -LogMessage "Administrator privileges required"
             $allChecksPassed = $false
         } else {
-            Write-Host "[PASS] Running with Administrator privileges" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "Administrator privileges confirmed"
+            Write-Status -Level Success "Running with Administrator privileges" -LogMessage "Administrator privileges confirmed"
         }
     } catch {
-        Write-Host "[FAIL] Could not verify administrator privileges" -ForegroundColor Red
-        Write-Log -Level "ERROR" -Message "Could not verify administrator privileges: $($_.Exception.Message)" -Console
+        Write-Status -Level Error "Could not verify administrator privileges" -LogMessage "Could not verify administrator privileges: $($_.Exception.Message)"
         $allChecksPassed = $false
     }
 
     # Check OS compatibility
     try {
         if (-not $script:HardeningContext.OS) {
-            Write-Host "[WARN] OS not detected. OS-specific steps will be skipped." -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "OS not detected"
+            Write-Status -Level Warning "OS not detected. OS-specific steps will be skipped." -LogMessage "OS not detected"
         } elseif ($script:HardeningContext.OS.OSVersion -eq "Unknown") {
-            Write-Host "[WARN] Unknown OS version detected. Some operations may not work correctly." -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "Unknown OS version detected"
+            Write-Status -Level Warning "Unknown OS version detected. Some operations may not work correctly." -LogMessage "Unknown OS version detected"
         } else {
-            Write-Host "[PASS] OS detected: $($script:HardeningContext.OS.OSVersion)" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "OS detected: $($script:HardeningContext.OS.OSVersion)"
+            Write-Status -Level Success "OS detected: $($script:HardeningContext.OS.OSVersion)"
         }
     } catch {
-        Write-Host "[WARN] OS detection failed" -ForegroundColor Yellow
-        Write-Log -Level "WARNING" -Message "OS detection failed: $($_.Exception.Message)"
+        Write-Status -Level Warning "OS detection failed" -LogMessage "OS detection failed: $($_.Exception.Message)"
     }
 
     # Check PowerShell version
     try {
         $psVersion = $PSVersionTable.PSVersion
         if ($psVersion.Major -lt 3) {
-            Write-Host "[WARN] PowerShell version $psVersion may not support all features" -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "PowerShell version $psVersion detected"
+            Write-Status -Level Warning "PowerShell version $psVersion may not support all features" -LogMessage "PowerShell version $psVersion detected"
         } else {
-            Write-Host "[PASS] PowerShell version: $psVersion" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "PowerShell version: $psVersion"
+            Write-Status -Level Success "PowerShell version: $psVersion"
         }
     } catch {
-        Write-Host "[WARN] Could not determine PowerShell version" -ForegroundColor Yellow
-        Write-Log -Level "WARNING" -Message "Could not determine PowerShell version"
+        Write-Status -Level Warning "Could not determine PowerShell version"
     }
 
-    Write-Banner "Pre-flight Checks Complete" -Style Inline
-    Write-Log -Level "INFO" -Message "=== Pre-flight Checks Complete ===" -Console
+    Write-Banner "Pre-flight Checks Complete" -Style Inline -Log
 
     if (-not $allChecksPassed) {
         throw "Must be run as Administrator (start PowerShell with 'Run as administrator')."

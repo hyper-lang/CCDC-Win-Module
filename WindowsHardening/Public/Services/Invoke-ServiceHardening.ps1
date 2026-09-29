@@ -41,22 +41,22 @@
 
     # Step 1: SMB hardening
     if (-not $SkipSMB) {
-        Write-Host "`n[Services 1/2] Hardening SMB configuration..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Services 1/2'
         Update-SMB
     } else {
-        Write-Host "`n[Services 1/2] SKIPPED - SMB hardening (-SkipSMB)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-ServiceHardening: SMB hardening skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Services 1/2' "SKIPPED - SMB hardening (-SkipSMB)" -LogMessage "Invoke-ServiceHardening: SMB hardening skipped"
     }
 
     # Step 2: Disable unused network protocols (IPv6, NetBIOS)
     if (-not $SkipNetworkProtocols) {
-        Write-Host "`n[Services 2/2] Disabling unused network protocols (IPv6, NetBIOS)..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Services 2/2'
         Disable-UnusedNetworkProtocols
     } else {
-        Write-Host "`n[Services 2/2] SKIPPED - unused network protocols (-SkipNetworkProtocols)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-ServiceHardening: Disable-UnusedNetworkProtocols skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Services 2/2' "SKIPPED - unused network protocols (-SkipNetworkProtocols)" -LogMessage "Invoke-ServiceHardening: Disable-UnusedNetworkProtocols skipped"
     }
 
-    Write-Host "`n[Services] Done." -ForegroundColor Green
-    Write-Log -Level "INFO" -Message "Invoke-ServiceHardening completed"
+    Write-Host ""
+    Write-Status -Tag Services "Done." -LogMessage "Invoke-ServiceHardening completed"
 }

@@ -81,14 +81,14 @@
         $ports = ConvertTo-PortList -Ports $FirewallPorts
         $extraPorts = ConvertTo-PortList -Ports $AdditionalPorts
     } catch {
-        Write-Host "[ERROR] Failed to parse FirewallPorts parameter: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Status -Level Error "Failed to parse FirewallPorts parameter: $($_.Exception.Message)"
         throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
     }
     if ($ports.Count -gt 0) {
-        Write-Host "[INFO] Firewall ports provided via parameter: $($ports -join ', ')" -ForegroundColor Cyan
+        Write-Status "Firewall ports provided via parameter: $($ports -join ', ')"
     }
     if ($extraPorts.Count -gt 0) {
-        Write-Host "[INFO] Additional firewall ports: $($extraPorts -join ', ')" -ForegroundColor Cyan
+        Write-Status "Additional firewall ports: $($extraPorts -join ', ')"
     }
 
     # $global:Error: inside a module, $Error is a separate module-scoped (empty) collection.
@@ -110,7 +110,8 @@
         Write-Host "  Is Server Core: $($osInfo.IsServerCore)" -ForegroundColor White
         Write-Host ""
     } else {
-        Write-Host "`n[ERROR] Failed to detect operating system." -ForegroundColor Red
+        Write-Host ""
+        Write-Status -Level Error "Failed to detect operating system."
         Write-Host "The script may not function correctly. Continue anyway? (y/n)" -ForegroundColor Yellow
         $continue = Read-Host
         if ($continue -ne "y") {
@@ -132,17 +133,17 @@
     try {
         Test-Prerequisites
     } catch {
-        Write-Host "`n[ERROR] Pre-flight checks failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Log -Level "CRITICAL" -Message "Pre-flight checks failed: $($_.Exception.Message)" -Console
+        Write-Host ""
+        Write-Status -Level Error "Pre-flight checks failed: $($_.Exception.Message)"
         throw "Pre-flight checks failed: $($_.Exception.Message)"
     }
 
     # -- Hardening sequence ---------------------------------------------------
     if ($SkipPasswordChange) {
-        Write-Host "[NOTE] Password rotation will be skipped (-sp)" -ForegroundColor Yellow
+        Write-Status "Password rotation will be skipped (-sp)"
     }
     if ($SkipRDP) {
-        Write-Host "[NOTE] RDP group reset and RDP disable will be skipped (-srdp)" -ForegroundColor Yellow
+        Write-Status "RDP group reset and RDP disable will be skipped (-srdp)"
     }
 
     Write-Host "`nStep 1/5: Hardening users and credentials..." -ForegroundColor Cyan
@@ -156,8 +157,7 @@
 
     Write-Host "`nStep 4/5: Configuring Splunk..." -ForegroundColor Cyan
     if ($SkipSplunk) {
-        Write-Host "  [SKIPPED] Splunk configuration skipped (-SkipSplunk)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Splunk configuration skipped per -SkipSplunk"
+        Write-Status -Level Skip "Splunk configuration skipped (-SkipSplunk)" -LogMessage "Splunk configuration skipped per -SkipSplunk"
     } else {
         if ([string]::IsNullOrEmpty($SplunkIP)) {
             $SplunkIP = Read-Host "`nInput IP address of Splunk Server"
@@ -180,29 +180,23 @@
         try {
             $errorFile = "$env:USERPROFILE\Desktop\hard.txt"
             $global:Error[0..($newErrorCount - 1)] | Out-File $errorFile -Append -Encoding utf8
-            Write-Log -Level "INFO" -Message "Errors written to $errorFile"
+            Write-Status "Errors written to $errorFile" -LogOnly
         } catch {
-            Write-Log -Level "WARNING" -Message "Could not write errors to file: $($_.Exception.Message)"
+            Write-Status -Level Warning "Could not write errors to file: $($_.Exception.Message)"
         }
     }
 
-    Write-Log -Level "INFO" -Message "=== Script Execution Completed ===" -Console
-    Write-Log -Level "INFO" -Message "Log file location: $script:LogFile" -Console
+    Write-Status -LogOnly "=== Script Execution Completed ==="
+    Write-Status "Log file location: $script:LogFile"
 
     Write-Host "`n" -NoNewline
     Write-Host ("=" * 60) -ForegroundColor Cyan
     if ($script:OperationResults.Failed -eq 0 -and $script:OperationResults.Skipped -eq 0) {
-        Write-Host "[SUCCESS] Hardening completed successfully!" -ForegroundColor Green
-        Write-Host "All $($script:OperationResults.Total) operation(s) completed without errors." -ForegroundColor Green
-        Write-Log -Level "SUCCESS" -Message "=== Hardening completed successfully ===" -Console
+        Write-Status -Level Success "Hardening completed successfully! All $($script:OperationResults.Total) operation(s) completed without errors." -LogMessage "=== Hardening completed successfully ==="
     } elseif ($script:OperationResults.Failed -eq 0) {
-        Write-Host "[SUCCESS] Hardening completed with warnings!" -ForegroundColor Green
-        Write-Host "All operations completed, but $($script:OperationResults.Skipped) operation(s) were skipped (see details above)." -ForegroundColor Yellow
-        Write-Log -Level "SUCCESS" -Message "=== Hardening completed with warnings ===" -Console
+        Write-Status -Level Warning "Hardening completed with warnings! All operations completed, but $($script:OperationResults.Skipped) operation(s) were skipped (see details above)." -LogMessage "=== Hardening completed with warnings ==="
     } else {
-        Write-Host "[WARNING] Hardening completed with errors - review the summary above" -ForegroundColor Yellow
-        Write-Host "Failed Operations: $($script:OperationResults.Failed)" -ForegroundColor Red
-        Write-Log -Level "ERROR" -Message "=== Hardening completed with errors ===" -Console
+        Write-Status -Level Error "Hardening completed with errors - review the summary above. Failed Operations: $($script:OperationResults.Failed)" -LogMessage "=== Hardening completed with errors ==="
     }
     Write-Host ("=" * 60) -ForegroundColor Cyan
 }

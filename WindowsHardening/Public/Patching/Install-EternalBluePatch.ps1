@@ -7,8 +7,7 @@
     Invoke-HardeningOperation -OperationName "EternalBlue Mitigated" -OSCompatibility $eternalBlueCompatible -ScriptBlock {
         $patchUrlsFile = Join-Path $script:DataPath 'patchURLs.json'
         if (-not (Test-Path $patchUrlsFile)) {
-            Write-Host "patchURLs.json not found in $script:DataPath (and could not be downloaded)." -ForegroundColor Yellow
-            Write-Log -Level "WARNING" -Message "patchURLs.json not found"
+            Write-Status -Level Warning "patchURLs.json not found in $script:DataPath (and could not be downloaded)." -LogMessage "patchURLs.json not found"
             throw "Required file not found"
         }
 
@@ -33,9 +32,9 @@
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             (New-Object Net.WebClient).DownloadFile($patchURL, $path)
-            Write-Log -Level "SUCCESS" -Message "Downloaded EternalBlue patch"
+            Write-Status -Level Success "Downloaded EternalBlue patch" -LogOnly
         } catch {
-            Write-Log -Level "ERROR" -Message "Failed to download EternalBlue patch: $($_.Exception.Message)"
+            Write-Status -Level Error "Failed to download EternalBlue patch: $($_.Exception.Message)"
             throw
         }
 
@@ -45,9 +44,9 @@
             if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
                 throw "Patch installation returned exit code: $($process.ExitCode)"
             }
-            Write-Log -Level "SUCCESS" -Message "EternalBlue patch installed successfully"
+            Write-Status -Level Success "EternalBlue patch installed successfully" -LogOnly
         } catch {
-            Write-Log -Level "ERROR" -Message "Failed to install EternalBlue patch: $($_.Exception.Message)"
+            Write-Status -Level Error "Failed to install EternalBlue patch: $($_.Exception.Message)"
             throw
         } finally {
             if (Test-Path $path) {

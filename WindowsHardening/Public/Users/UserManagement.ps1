@@ -108,8 +108,7 @@ function Initialize-CompetitionUsers {
         Write-Host "`nSetting passwords for CCDC domain users..."
         foreach ($u in @("ccdcuser2", "ccdcuser3")) {
             if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
-                Write-Host "Domain user '$u' not found; skipping. Create it with 'New-ADUser' and rerun." -ForegroundColor Yellow
-                Write-Log -Level "WARNING" -Message "Domain user '$u' not found after creation; password and enable skipped"
+                Write-Status -Level Warning "Domain user '$u' not found; skipping. Create it with 'New-ADUser' and rerun." -LogMessage "Domain user '$u' not found after creation; password and enable skipped"
                 continue
             }
             Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser3") -WordlistData $WordlistData -SaltPhrase $SaltPhrase

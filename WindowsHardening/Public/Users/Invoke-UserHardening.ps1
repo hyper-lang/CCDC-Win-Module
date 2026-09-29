@@ -63,45 +63,45 @@
 
     # Step 1: Remove extra admin accounts
     if (-not $SkipAdminRemoval) {
-        Write-Host "`n[Users 1/4] Removing extra admin users..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Users 1/4'
         Remove-AdminUsers
     } else {
-        Write-Host "`n[Users 1/4] SKIPPED - admin removal (-SkipAdminRemoval)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-UserHardening: admin removal skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Users 1/4' "SKIPPED - admin removal (-SkipAdminRemoval)" -LogMessage "Invoke-UserHardening: admin removal skipped"
     }
 
     # Step 2: Rotate passwords and create competition accounts (before the RDP reset and
     # the rest of the run, so stolen credentials stop working as early as possible)
     if (-not $SkipPasswordChange) {
-        Write-Host "`n[Users 2/4] Creating competition users and rotating passwords (Zulu)..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Users 2/4'
         # Wrapped like the other steps so a Zulu failure is counted but does not abort
         # the remaining user, network, and policy hardening.
         Invoke-HardeningOperation -OperationName "Zulu Passwords" -ScriptBlock {
             Set-ZuluPassword -Initial -SaltPhrase $SaltPhrase
         }
     } else {
-        Write-Host "`n[Users 2/4] SKIPPED - password rotation (-SkipPasswordChange)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-UserHardening: password rotation skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Users 2/4' "SKIPPED - password rotation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: password rotation skipped"
     }
 
     # Step 3: Reset RDP group
     if (-not $SkipRDP) {
-        Write-Host "`n[Users 3/4] Resetting Remote Desktop Users group..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Users 3/4'
         Remove-RDPUsers
     } else {
-        Write-Host "`n[Users 3/4] SKIPPED - RDP group reset (-SkipRDP)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-UserHardening: RDP group reset skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Users 3/4' "SKIPPED - RDP group reset (-SkipRDP)" -LogMessage "Invoke-UserHardening: RDP group reset skipped"
     }
 
     # Step 4: Credential hardening (WDigest + LSA)
     if (-not $SkipMimikatz) {
-        Write-Host "`n[Users 4/4] Hardening credentials (WDigest/LSA)..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Users 4/4'
         Protect-Mimikatz
     } else {
-        Write-Host "`n[Users 4/4] SKIPPED - credential hardening (-SkipMimikatz)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-UserHardening: Protect-Mimikatz skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Users 4/4' "SKIPPED - credential hardening (-SkipMimikatz)" -LogMessage "Invoke-UserHardening: Protect-Mimikatz skipped"
     }
 
-    Write-Host "`n[Users] Done." -ForegroundColor Green
-    Write-Log -Level "INFO" -Message "Invoke-UserHardening completed"
+    Write-Host ""
+    Write-Status -Tag Users "Done." -LogMessage "Invoke-UserHardening completed"
 }

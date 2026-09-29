@@ -6,18 +6,17 @@ function Update-SMB {
 
     Invoke-HardeningOperation -OperationName "Upgrade SMB" -OSCompatibility $smbUpgradeCompatible -ProgressMessage "Enabling SMBv2/v3 and disabling SMBv1 for improved security" -ScriptBlock {
         if (-not [bool](Get-Module -ListAvailable -Name SmbShare)) {
-            Write-Host "[WARNING] SMB module not available. Attempting to import..." -ForegroundColor Yellow
+            Write-Status -Level Warning "SMB module not available. Attempting to import..."
             try {
                 Import-Module SmbShare -ErrorAction Stop
-                Write-Log -Level "SUCCESS" -Message "Imported SMB module"
+                Write-Status -Level Success "Imported SMB module" -LogOnly
             } catch {
-                Write-Host "[WARNING] Could not import SMB module. SMB configuration may not work correctly." -ForegroundColor Yellow
-                Write-Log -Level "WARNING" -Message "SMB module not available: $($_.Exception.Message)"
+                Write-Status -Level Warning "Could not import SMB module. SMB configuration may not work correctly." -LogMessage "SMB module not available: $($_.Exception.Message)"
             }
         }
 
         try {
-            Write-Host "[INFO] Detecting current SMB configuration..." -ForegroundColor Cyan
+            Write-Status "Detecting current SMB configuration..."
             $smbConfig = Get-SmbServerConfiguration
             $smbv1Enabled = $smbConfig.EnableSMB1Protocol
             $smbv2Enabled = $smbConfig.EnableSMB2Protocol
@@ -29,7 +28,7 @@ function Update-SMB {
             }
             $restart = $false
 
-            Write-Host "[INFO] Current SMB Configuration:" -ForegroundColor Cyan
+            Write-Status "Current SMB Configuration:"
             if ($smbv1Enabled) {
                 Write-Host "  SMBv1: Enabled" -ForegroundColor Red
             } else {
@@ -49,48 +48,40 @@ function Update-SMB {
             }
 
             if ($smbv2Enabled -eq $false) {
-                Write-Host "[ACTION] Enabling SMBv2..." -ForegroundColor Yellow
+                Write-Status "Enabling SMBv2..."
                 try {
                     Set-SmbServerConfiguration -EnableSMB2Protocol $true -Force
-                    Write-Host "[SUCCESS] SMBv2 enabled" -ForegroundColor Green
-                    Write-Log -Level "SUCCESS" -Message "Enabled SMBv2/SMBv3"
+                    Write-Status -Level Success "SMBv2 enabled" -LogMessage "Enabled SMBv2/SMBv3"
                     $restart = $true
                 } catch {
-                    Write-Host "[FAILED] SMB upgrade failed: $($_.Exception.Message)" -ForegroundColor Red
-                    Write-Log -Level "ERROR" -Message "SMB upgrade failed: $($_.Exception.Message)"
+                    Write-Status -Level Error "SMB upgrade failed: $($_.Exception.Message)"
                     throw
                 }
             } else {
-                Write-Host "[INFO] SMBv2 already enabled" -ForegroundColor Green
-                Write-Log -Level "INFO" -Message "SMBv2 already enabled"
+                Write-Status "SMBv2 already enabled"
             }
 
             if ($smbv1Enabled -eq $true) {
-                Write-Host "[ACTION] Disabling SMBv1 (vulnerable protocol)..." -ForegroundColor Yellow
+                Write-Status "Disabling SMBv1 (vulnerable protocol)..."
                 try {
                     Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force
-                    Write-Host "[SUCCESS] SMBv1 disabled" -ForegroundColor Green
-                    Write-Log -Level "SUCCESS" -Message "Disabled SMBv1"
+                    Write-Status -Level Success "SMBv1 disabled" -LogMessage "Disabled SMBv1"
                     $restart = $true
                 } catch {
-                    Write-Host "[FAILED] SMB upgrade failed: $($_.Exception.Message)" -ForegroundColor Red
-                    Write-Log -Level "ERROR" -Message "SMB upgrade failed: $($_.Exception.Message)"
+                    Write-Status -Level Error "SMB upgrade failed: $($_.Exception.Message)"
                     throw
                 }
             } else {
-                Write-Host "[INFO] SMBv1 already disabled" -ForegroundColor Green
-                Write-Log -Level "INFO" -Message "SMBv1 already disabled"
+                Write-Status "SMBv1 already disabled"
             }
 
             if ($restart -eq $true) {
-                Write-Host "[WARNING] System restart recommended for SMB changes to take full effect" -ForegroundColor Yellow
-                Write-Log -Level "WARNING" -Message "System restart may be required for SMB changes"
+                Write-Status -Level Warning "System restart recommended for SMB changes to take full effect" -LogMessage "System restart may be required for SMB changes"
             } else {
-                Write-Host "[SUCCESS] SMB configuration is already optimal" -ForegroundColor Green
+                Write-Status -Level Success "SMB configuration is already optimal"
             }
         } catch {
-            Write-Host "[ERROR] SMB upgrade failed: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Log -Level "ERROR" -Message "SMB upgrade failed: $($_.Exception.Message)" -Console
+            Write-Status -Level Error "SMB upgrade failed: $($_.Exception.Message)"
             throw
         }
     }

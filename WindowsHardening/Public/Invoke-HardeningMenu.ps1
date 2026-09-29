@@ -160,10 +160,9 @@
                 # Also set separately so logging is on even if auditing fails partway.
                 try {
                     Set-NetFirewallProfile -Name Domain,Public,Private -LogAllowed True -LogBlocked True
-                    Write-Host "Firewall logging enabled (allowed + blocked)" -ForegroundColor Green
-                    Write-Log -Level "SUCCESS" -Message "Enabled firewall logging"
+                    Write-Status -Level Success "Firewall logging enabled (allowed + blocked)" -LogMessage "Enabled firewall logging"
                 } catch {
-                    Write-Log -Level "WARNING" -Message "Could not enable firewall logging: $($_.Exception.Message)"
+                    Write-Status -Level Warning "Could not enable firewall logging: $($_.Exception.Message)"
                 }
             }
             '16' {
@@ -206,8 +205,7 @@
             Invoke-MenuAction -Choice $Selection
         } catch {
             Write-Host $_.Exception.Message -ForegroundColor Yellow
-            Write-Host "Error Occurred..." -ForegroundColor Red
-            Write-Log -Level "ERROR" -Message "Menu operation error: $($_.Exception.Message)" -Console
+            Write-Status -Level Error "Error Occurred..." -LogMessage "Menu operation error: $($_.Exception.Message)"
         }
         return
     }
@@ -224,8 +222,7 @@
                 Invoke-MenuAction -Choice $choice
             } catch {
                 Write-Host $_.Exception.Message -ForegroundColor Yellow
-                Write-Host "Error Occurred..." -ForegroundColor Red
-                Write-Log -Level "ERROR" -Message "Menu operation error: $($_.Exception.Message)" -Console
+                Write-Status -Level Error "Error Occurred..." -LogMessage "Menu operation error: $($_.Exception.Message)"
             }
         }
 

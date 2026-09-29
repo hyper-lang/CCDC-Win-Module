@@ -55,7 +55,7 @@ function Set-FirewallAllowRule {
         $existing[0] | Set-NetFirewallRule -Direction Inbound -Action Allow -Protocol $Protocol -LocalPort $Port -Enabled True
         if ($existing.Count -gt 1) {
             $existing[1..($existing.Count - 1)] | Remove-NetFirewallRule
-            Write-Log -Level "INFO" -Message "Removed $($existing.Count - 1) duplicate '$displayName' rule(s)"
+            Write-Status "Removed $($existing.Count - 1) duplicate '$displayName' rule(s)" -LogOnly
         }
         $status = 'Updated'
     } else {
@@ -78,8 +78,7 @@ function Set-FirewallAllowRule {
     )
     foreach ($rule in $blocking) {
         $message = "Enabled Block rule '$($rule.DisplayName)' also matches $Protocol $Port and overrides the Allow rule"
-        Write-Host "  [WARNING] $message" -ForegroundColor Yellow
-        Write-Log -Level "WARNING" -Message $message
+        Write-Status -Level Warning "$message" -LogMessage $message
     }
 
     return $status
@@ -135,8 +134,7 @@ function Add-FirewallPort {
             $description = Get-FirewallPortDescription -Port $port
             foreach ($proto in $protocols) {
                 $status = Set-FirewallAllowRule -Port $port -Protocol $proto
-                Write-Host "  [$($status.ToUpper())] Allow $proto $port ($description)" -ForegroundColor Green
-                Write-Log -Level "SUCCESS" -Message "$status inbound $proto rule for port $port ($description)"
+                Write-Status -Level Success -Tag ($status.ToUpper()) "Allow $proto $port ($description)" -LogMessage "$status inbound $proto rule for port $port ($description)"
             }
         }
     }

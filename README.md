@@ -82,7 +82,7 @@ WindowsHardening/
 │   │                Set-RestrictedExecutionPolicy
 │   ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
 │   ├── Patching/    Install-EternalBluePatch
-│   ├── Messages/    Write-Log, Show-OperationSummary, Start-HardeningLog, Write-Banner,
+│   ├── Messages/    Write-Status, Show-OperationSummary, Start-HardeningLog, Write-Banner,
 │   │                Read-Choice, Read-YesNo, Read-SecretInput
 │   ├── Helpers/     One file per function, named after it: Initialize-System,
 │   │                Initialize-Context, Get-HardeningContext, Test-Prerequisites,

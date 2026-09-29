@@ -90,7 +90,7 @@ function Show-Users {
 
         return $output
     } catch {
-        Write-Log -Level "ERROR" -Message "Error in Show-Users: $($_.Exception.Message)"
+        Write-Status -Level Error "Error in Show-Users: $($_.Exception.Message)"
         return $null
     }
 }

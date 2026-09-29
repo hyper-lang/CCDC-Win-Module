@@ -15,8 +15,7 @@ function Remove-RDPUsers {
             }
 
             if ($null -eq $rdpGroupMembers -or $rdpGroupMembers.Count -eq 0) {
-                Write-Host "  [INFO] Remote Desktop Users group is already empty" -ForegroundColor Yellow
-                Write-Log -Level "INFO" -Message "Remote Desktop Users group is already empty"
+                Write-Status "Remote Desktop Users group is already empty"
             } else {
                 $removedCount = 0
                 foreach ($member in $rdpGroupMembers) {
@@ -28,8 +27,7 @@ function Remove-RDPUsers {
                         }
 
                         if ($ExclusionList -contains $username) {
-                            Write-Host "  [SKIP] Skipping $username (Protected Account)" -ForegroundColor Magenta
-                            Write-Log -Level "INFO" -Message "Skipped removal of $username from RDP group"
+                            Write-Status -Level Skip "Skipping $username (Protected Account)" -LogMessage "Skipped removal of $username from RDP group"
                             continue
                         }
 
@@ -39,23 +37,19 @@ function Remove-RDPUsers {
                             Remove-LocalGroupMember -Group "Remote Desktop Users" -Member $member -Confirm:$false -ErrorAction Stop
                         }
 
-                        Write-Host "  [SUCCESS] Removed $username from Remote Desktop Users group" -ForegroundColor Green
-                        Write-Log -Level "SUCCESS" -Message "Removed $username from Remote Desktop Users group"
+                        Write-Status -Level Success "Removed $username from Remote Desktop Users group"
                         $removedCount++
                     } catch {
                         $displayName = if ($isDC) { $member.SAMAccountName } else { $member.Name }
-                        Write-Host "  [WARNING] Could not remove $displayName from Remote Desktop Users group: $($_.Exception.Message)" -ForegroundColor Yellow
-                        Write-Log -Level "WARNING" -Message "Could not remove $displayName from Remote Desktop Users group: $($_.Exception.Message)"
+                        Write-Status -Level Warning "Could not remove $displayName from Remote Desktop Users group: $($_.Exception.Message)"
                     }
                 }
-                Write-Host "  [INFO] Removed $removedCount user(s) from Remote Desktop Users group" -ForegroundColor Cyan
+                Write-Status "Removed $removedCount user(s) from Remote Desktop Users group"
             }
 
-            Write-Host "RDP users removed successfully - Remote Desktop Users group has been reset" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "RDP users removal completed - Remote Desktop Users group reset"
+            Write-Status -Level Success "RDP users removed successfully - Remote Desktop Users group has been reset" -LogMessage "RDP users removal completed - Remote Desktop Users group reset"
         } catch {
-            Write-Host "  [ERROR] Failed to remove RDP users: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Log -Level "ERROR" -Message "Failed to remove RDP users: $($_.Exception.Message)"
+            Write-Status -Level Error "Failed to remove RDP users: $($_.Exception.Message)"
             throw
         }
     }

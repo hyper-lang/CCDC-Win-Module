@@ -26,13 +26,12 @@ function Set-RegistryValue {
     try {
         if (-not (Test-Path -Path $Path)) {
             if ($CreatePathIfMissing) {
-                Write-Host "[INFO] Creating registry path: $Path" -ForegroundColor Cyan
+                Write-Status "Creating registry path: $Path"
                 New-Item -Path $Path -Force | Out-Null
-                Write-Log -Level "SUCCESS" -Message "Created registry path: $Path"
+                Write-Status -Level Success "Created registry path: $Path" -LogOnly
             } else {
                 $message = "Registry path not found and CreatePathIfMissing not specified: $Path"
-                Write-Host "[SKIPPED] $message" -ForegroundColor Yellow
-                Write-Log -Level "WARNING" -Message "$OperationName - $message" -Console
+                Write-Status -Level Skip "$message" -LogMessage "$OperationName - $message"
                 $script:OperationResults.Skipped++
                 return $false
             }
@@ -42,20 +41,17 @@ function Set-RegistryValue {
 
         if ($null -ne $existingValue -and $existingValue.PSObject.Properties[$Name]) {
             Set-ItemProperty -Path $Path -Name $Name -Value $Value | Out-Null
-            Write-Host "[SUCCESS] Updated registry value: $Path\$Name = $Value" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "Updated registry value: $Path\$Name = $Value"
+            Write-Status -Level Success "Updated registry value: $Path\$Name = $Value"
         } else {
             New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $PropertyType -Force | Out-Null
-            Write-Host "[SUCCESS] Created and set registry value: $Path\$Name = $Value" -ForegroundColor Green
-            Write-Log -Level "SUCCESS" -Message "Created registry value: $Path\$Name = $Value"
+            Write-Status -Level Success "Created and set registry value: $Path\$Name = $Value" -LogMessage "Created registry value: $Path\$Name = $Value"
         }
 
         return $true
 
     } catch {
         $errorMessage = "Failed to set registry value $Path\$Name : $($_.Exception.Message)"
-        Write-Host "[ERROR] $errorMessage" -ForegroundColor Red
-        Write-Log -Level "ERROR" -Message "$OperationName - $errorMessage" -Console
+        Write-Status -Level Error "$errorMessage" -LogMessage "$OperationName - $errorMessage"
         throw
     }
 }

@@ -36,7 +36,7 @@ function Initialize-System {
             $script:HardeningContext.OS = Get-OperatingSystemInfo
         } catch {
             $script:HardeningContext.OS = $null
-            Write-Host "[WARN] OS detection failed; OS-specific steps will be skipped: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "OS detection failed; OS-specific steps will be skipped: $($_.Exception.Message)"
         }
 
         Start-HardeningLog -LogPath $LogPath
@@ -46,8 +46,7 @@ function Initialize-System {
         Write-Host "Initialization complete" -ForegroundColor Green
     } catch {
         $script:HardeningContext.Initialized = $false
-        Write-Host "Initialization failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Log -Level "ERROR" -Message "System initialization failed: $($_.Exception.Message)" -Console
+        Write-Status -Level Error "Initialization failed: $($_.Exception.Message)" -LogMessage "System initialization failed: $($_.Exception.Message)"
         throw "System initialization failed: $($_.Exception.Message)"
     }
 }

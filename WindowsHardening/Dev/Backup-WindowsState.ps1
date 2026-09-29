@@ -140,10 +140,10 @@
             $regValues | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $regDir "security_values.json") -Encoding UTF8
             if (Test-Path (Join-Path $regDir "security_values.json")) { $backedUpFiles += "registry\security_values.json" }
 
-            Write-Host "    [OK] Registry hives captured" -ForegroundColor Green
+            Write-Status -Level Success "Registry hives captured"
         } catch {
             $backupErrors += "Registry: $($_.Exception.Message)"
-            Write-Host "    [WARN] Registry capture partially failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Registry capture partially failed: $($_.Exception.Message)"
         }
 
         # -- 2. Service Startup Types + Accounts -------------------------------
@@ -165,10 +165,10 @@
             }
             $serviceDetails | ConvertTo-Json -Depth 5 | Out-File -FilePath $svcFile -Encoding UTF8
             $backedUpFiles += "services.json"
-            Write-Host "    [OK] Service configurations captured ($($services.Count) services)" -ForegroundColor Green
+            Write-Status -Level Success "Service configurations captured ($($services.Count) services)"
         } catch {
             $backupErrors += "Services: $($_.Exception.Message)"
-            Write-Host "    [WARN] Service capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Service capture failed: $($_.Exception.Message)"
         }
 
         # -- 3. Firewall Profiles + Rules --------------------------------------
@@ -196,10 +196,10 @@
             Export-FirewallConfig -Path $fwExportPath
             if (Test-Path $fwExportPath) { $backedUpFiles += "firewall\firewall_policy.wfw" }
 
-            Write-Host "    [OK] Firewall configuration captured ($($rules.Count) rules)" -ForegroundColor Green
+            Write-Status -Level Success "Firewall configuration captured ($($rules.Count) rules)"
         } catch {
             $backupErrors += "Firewall: $($_.Exception.Message)"
-            Write-Host "    [WARN] Firewall capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Firewall capture failed: $($_.Exception.Message)"
         }
 
         # -- 4. Local Users + Groups + Memberships -----------------------------
@@ -239,10 +239,10 @@
             $groupMembership | ConvertTo-Json -Depth 10 | Out-File -FilePath (Join-Path $usersDir "group_memberships.json") -Encoding UTF8
             $backedUpFiles += "users\group_memberships.json"
 
-            Write-Host "    [OK] User/group state captured ($($localUsers.Count) users, $($localGroups.Count) groups)" -ForegroundColor Green
+            Write-Status -Level Success "User/group state captured ($($localUsers.Count) users, $($localGroups.Count) groups)"
         } catch {
             $backupErrors += "Users/Groups: $($_.Exception.Message)"
-            Write-Host "    [WARN] User/group capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "User/group capture failed: $($_.Exception.Message)"
         }
 
         # -- 5. Auditpol Settings ----------------------------------------------
@@ -252,13 +252,13 @@
             auditpol /backup /file:$auditFile 2>&1 | Out-Null
             if (Test-Path $auditFile) {
                 $backedUpFiles += "auditpol.csv"
-                Write-Host "    [OK] Audit policy captured" -ForegroundColor Green
+                Write-Status -Level Success "Audit policy captured"
             } else {
                 throw "auditpol export did not create file"
             }
         } catch {
             $backupErrors += "Auditpol: $($_.Exception.Message)"
-            Write-Host "    [WARN] Audit policy capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Audit policy capture failed: $($_.Exception.Message)"
         }
 
         # -- 6. SMB Configuration ----------------------------------------------
@@ -268,10 +268,10 @@
             $smbConfig = Get-SmbServerConfiguration
             $smbConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $smbFile -Encoding UTF8
             $backedUpFiles += "smb_config.json"
-            Write-Host "    [OK] SMB configuration captured" -ForegroundColor Green
+            Write-Status -Level Success "SMB configuration captured"
         } catch {
             $backupErrors += "SMB: $($_.Exception.Message)"
-            Write-Host "    [WARN] SMB capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "SMB capture failed: $($_.Exception.Message)"
         }
 
         # -- 7. WDigest Registry Values ----------------------------------------
@@ -288,10 +288,10 @@
             }
             $wdigestData | ConvertTo-Json -Depth 5 | Out-File -FilePath $wdigestFile -Encoding UTF8
             $backedUpFiles += "wdigest.json"
-            Write-Host "    [OK] WDigest configuration captured" -ForegroundColor Green
+            Write-Status -Level Success "WDigest configuration captured"
         } catch {
             $backupErrors += "WDigest: $($_.Exception.Message)"
-            Write-Host "    [WARN] WDigest capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "WDigest capture failed: $($_.Exception.Message)"
         }
 
         # -- 8. Execution Policy -----------------------------------------------
@@ -303,10 +303,10 @@
                 ExecutionPolicy = $currentPolicy
             } | ConvertTo-Json | Out-File -FilePath $execFile -Encoding UTF8
             $backedUpFiles += "execution_policy.json"
-            Write-Host "    [OK] Execution policy captured: $currentPolicy" -ForegroundColor Green
+            Write-Status -Level Success "Execution policy captured: $currentPolicy"
         } catch {
             $backupErrors += "ExecutionPolicy: $($_.Exception.Message)"
-            Write-Host "    [WARN] Execution policy capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Execution policy capture failed: $($_.Exception.Message)"
         }
 
         # -- 9. LSA Settings --------------------------------------------------
@@ -316,10 +316,10 @@
             $lsaValues = Get-LSARegistryValues
             $lsaValues | ConvertTo-Json -Depth 10 | Out-File -FilePath $lsaFile -Encoding UTF8
             $backedUpFiles += "lsa_settings.json"
-            Write-Host "    [OK] LSA settings captured" -ForegroundColor Green
+            Write-Status -Level Success "LSA settings captured"
         } catch {
             $backupErrors += "LSA: $($_.Exception.Message)"
-            Write-Host "    [WARN] LSA capture failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "LSA capture failed: $($_.Exception.Message)"
         }
 
         # -- 10. SHA256 Checksums ----------------------------------------------
@@ -336,10 +336,10 @@
             }
             $checksumEntries | Out-File -FilePath $checksumFile -Encoding UTF8
             $backedUpFiles += "checksums.txt"
-            Write-Host "    [OK] Checksums generated ($($checksumEntries.Count) files)" -ForegroundColor Green
+            Write-Status -Level Success "Checksums generated ($($checksumEntries.Count) files)"
         } catch {
             $backupErrors += "Checksums: $($_.Exception.Message)"
-            Write-Host "    [WARN] Checksum generation failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Status -Level Warning "Checksum generation failed: $($_.Exception.Message)"
         }
 
         # -- Summary -----------------------------------------------------------

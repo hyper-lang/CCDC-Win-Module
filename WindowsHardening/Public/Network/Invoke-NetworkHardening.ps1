@@ -81,12 +81,12 @@
     Write-Banner "Network & Remote-Access Hardening"
 
     # Step 1: Firewall
-    Write-Host "`n[Network 1/2] Configuring firewall..." -ForegroundColor Cyan
+    $script:NextStepLabel = 'Network 1/2'
     Set-FirewallConfiguration -NonInteractive:$NonInteractive -Prompt:$Prompt -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
 
     # Step 2: Remote management teardown
     if (-not $SkipRemoteManagement) {
-        Write-Host "`n[Network 2/2] Removing remote management attack surface..." -ForegroundColor Cyan
+        $script:NextStepLabel = 'Network 2/2'
         if ($PreserveManagementPort) {
             # Running over WinRM - keep WinRM alive, still disable RDP unless caller opts out
             if ($SkipRDP) {
@@ -102,10 +102,10 @@
             }
         }
     } else {
-        Write-Host "`n[Network 2/2] SKIPPED - remote management teardown (-SkipRemoteManagement)" -ForegroundColor Yellow
-        Write-Log -Level "INFO" -Message "Invoke-NetworkHardening: Remove-RemoteManagement skipped"
+        Write-Host ""
+        Write-Status -Level Skip -Tag 'Network 2/2' "SKIPPED - remote management teardown (-SkipRemoteManagement)" -LogMessage "Invoke-NetworkHardening: Remove-RemoteManagement skipped"
     }
 
-    Write-Host "`n[Network] Done." -ForegroundColor Green
-    Write-Log -Level "INFO" -Message "Invoke-NetworkHardening completed"
+    Write-Host ""
+    Write-Status -Tag Network "Done." -LogMessage "Invoke-NetworkHardening completed"
 }

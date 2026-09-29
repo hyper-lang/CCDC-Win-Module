@@ -43,11 +43,10 @@ function Initialize-Context {
                 try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                     Invoke-WebRequest -Uri "$script:CcdcRepoUrl/$file" -OutFile $target
-                    Write-Log -Level "SUCCESS" -Message "Downloaded $filename"
+                    Write-Status -Level Success "Downloaded $filename" -LogOnly
                 } catch {
                     # Non-fatal: each consumer checks for its own file (ports.json has a fallback).
-                    Write-Host "[WARN] Failed to download $filename : $($_.Exception.Message)" -ForegroundColor Yellow
-                    Write-Log -Level "WARNING" -Message "Failed to download $filename : $($_.Exception.Message)"
+                    Write-Status -Level Warning "Failed to download $filename : $($_.Exception.Message)"
                 }
             } else {
                 Write-Verbose "File already exists: $filename"
@@ -61,10 +60,10 @@ function Initialize-Context {
         $portsFile = Join-Path $script:DataPath 'ports.json'
         if (Test-Path $portsFile) {
             $script:HardeningContext.Ports = Get-Content -Path $portsFile -Raw | ConvertFrom-Json
-            Write-Log -Level "INFO" -Message "Loaded ports configuration from ports.json"
+            Write-Status "Loaded ports configuration from ports.json" -LogOnly
         } else {
             $script:HardeningContext.Ports = $script:FallbackPorts
-            Write-Log -Level "WARNING" -Message "ports.json not found, using fallback port definitions"
+            Write-Status -Level Warning "ports.json not found, using fallback port definitions"
         }
 
         Write-Host "Context initialized successfully" -ForegroundColor Green

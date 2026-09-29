@@ -18,8 +18,7 @@ function Set-RestrictedExecutionPolicy {
             # The value is saved, but a more specific scope (e.g. -ExecutionPolicy Bypass on
             # this session) overrides it for now. Anything else is a real failure.
             if ($_.FullyQualifiedErrorId -notlike 'ExecutionPolicyOverride*') {
-                Write-Host "Failed to set Execution Policy: $($_.Exception.Message)" -ForegroundColor Red
-                Write-Log -Level "ERROR" -Message "Failed to set Execution Policy: $($_.Exception.Message)"
+                Write-Status -Level Error "Failed to set Execution Policy: $($_.Exception.Message)"
                 throw
             }
             # Expected; drop it from $Error so it is not reported as a failure in hard.txt.
@@ -36,12 +35,10 @@ function Set-RestrictedExecutionPolicy {
             $policy = Get-ExecutionPolicy -Scope $scope
             if ($policy -ne 'Undefined' -and $policy -ne 'Restricted') {
                 $message = "Execution policy '$policy' at scope $scope overrides the LocalMachine Restricted setting"
-                Write-Host "[WARNING] $message" -ForegroundColor Yellow
-                Write-Log -Level "WARNING" -Message $message
+                Write-Status -Level Warning "$message" -LogMessage $message
             }
         }
 
-        Write-Host "Execution Policy set to Restricted (LocalMachine)" -ForegroundColor Green
-        Write-Log -Level "SUCCESS" -Message "Set LocalMachine Execution Policy to Restricted"
+        Write-Status -Level Success "Execution Policy set to Restricted (LocalMachine)" -LogMessage "Set LocalMachine Execution Policy to Restricted"
     }
 }

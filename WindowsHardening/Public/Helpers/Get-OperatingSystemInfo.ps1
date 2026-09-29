@@ -127,12 +127,12 @@ function Get-OperatingSystemInfo {
         $role = if ($isDomainController) { "Domain Controller ($($result.Domain))" }
                 elseif ($isDomainJoined) { "domain member ($($result.Domain))" }
                 else { 'not domain-joined' }
-        Write-Host "`n[INFO] OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition) - $role" -ForegroundColor Cyan
-        Write-Log -Level "INFO" -Message "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)"
+        Write-Host ""
+        Write-Status "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition) - $role" -LogMessage "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)"
         if ($isDomainController) {
-            Write-Log -Level "INFO" -Message "Domain Controller detected - AD operations enabled"
+            Write-Status "Domain Controller detected - AD operations enabled" -LogOnly
         } else {
-            Write-Log -Level "INFO" -Message "Non-domain machine detected - local operations only"
+            Write-Status "Non-domain machine detected - local operations only" -LogOnly
         }
 
         $script:HardeningContext.OS = $result

@@ -108,11 +108,11 @@
             if (Test-Path $fullPath) {
                 $actualHash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
                 if ($actualHash -ne $expectedHash) {
-                    Write-Host "  [FAIL] Checksum mismatch: $relativePath" -ForegroundColor Red
+                    Write-Status -Level Error "Checksum mismatch: $relativePath"
                     $checksumVerified = $false
                 }
             } else {
-                Write-Host "  [WARN] Missing file: $relativePath" -ForegroundColor Yellow
+                Write-Status -Level Warning "Missing file: $relativePath"
                 $checksumVerified = $false
             }
         }
@@ -120,7 +120,7 @@
     if (-not $checksumVerified) {
         throw "Backup integrity check failed - aborting restore to prevent corrupt state"
     }
-    Write-Host "  [OK] All checksums verified" -ForegroundColor Green
+    Write-Status -Level Success "All checksums verified"
 
     # -- Detect DC status -------------------------------------------------------
     $isDC = (Get-OperatingSystemInfo).IsDomainController
@@ -140,11 +140,11 @@
             }
             Restore-LSAValues -Values $lsaHash
             $restoredCategories += "LSA"
-            Write-Host "    [OK] LSA settings restored" -ForegroundColor Green
+            Write-Status -Level Success "LSA settings restored"
         }
     } catch {
         $restoreErrors += "LSA: $($_.Exception.Message)"
-        Write-Host "    [WARN] LSA restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "LSA restore failed: $($_.Exception.Message)"
     }
 
     # -- 2. Restore Execution Policy --------------------------------------------
@@ -155,11 +155,11 @@
             $execData = Get-Content -Path $execFile -Raw | ConvertFrom-Json
             Set-ExecutionPolicy -ExecutionPolicy $execData.ExecutionPolicy -Force -ErrorAction Stop
             $restoredCategories += "ExecutionPolicy"
-            Write-Host "    [OK] Execution policy restored: $($execData.ExecutionPolicy)" -ForegroundColor Green
+            Write-Status -Level Success "Execution policy restored: $($execData.ExecutionPolicy)"
         }
     } catch {
         $restoreErrors += "ExecutionPolicy: $($_.Exception.Message)"
-        Write-Host "    [WARN] Execution policy restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Execution policy restore failed: $($_.Exception.Message)"
     }
 
     # -- 3. Restore WDigest Registry Values ------------------------------------
@@ -172,11 +172,11 @@
                 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value $wdigestData.UseLogonCredential -Type DWord -ErrorAction Stop
             }
             $restoredCategories += "WDigest"
-            Write-Host "    [OK] WDigest configuration restored" -ForegroundColor Green
+            Write-Status -Level Success "WDigest configuration restored"
         }
     } catch {
         $restoreErrors += "WDigest: $($_.Exception.Message)"
-        Write-Host "    [WARN] WDigest restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "WDigest restore failed: $($_.Exception.Message)"
     }
 
     # -- 4. Restore SMB Configuration ------------------------------------------
@@ -191,11 +191,11 @@
                 -EncryptData $([bool]$smbData.EncryptData) `
                 -Force -ErrorAction Stop
             $restoredCategories += "SMB"
-            Write-Host "    [OK] SMB configuration restored" -ForegroundColor Green
+            Write-Status -Level Success "SMB configuration restored"
         }
     } catch {
         $restoreErrors += "SMB: $($_.Exception.Message)"
-        Write-Host "    [WARN] SMB restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "SMB restore failed: $($_.Exception.Message)"
     }
 
     # -- 5. Restore Audit Policy -----------------------------------------------
@@ -205,11 +205,11 @@
         if (Test-Path $auditFile) {
             auditpol /restore /file:$auditFile 2>&1 | Out-Null
             $restoredCategories += "AuditPolicy"
-            Write-Host "    [OK] Audit policy restored" -ForegroundColor Green
+            Write-Status -Level Success "Audit policy restored"
         }
     } catch {
         $restoreErrors += "AuditPolicy: $($_.Exception.Message)"
-        Write-Host "    [WARN] Audit policy restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Audit policy restore failed: $($_.Exception.Message)"
     }
 
     # -- 6. Restore Users/Groups/Memberships -----------------------------------
@@ -239,13 +239,13 @@
                 }
             }
             $restoredCategories += "UsersGroups"
-            Write-Host "    [OK] User/group state restored (local)" -ForegroundColor Green
+            Write-Status -Level Success "User/group state restored (local)"
         } else {
             # DC: log AD objects that cannot be automatically removed
             $manualResetItems += "AD users 'ccdcuser2', 'ccdcuser3' - remove via Remove-ADUser if needed"
             $manualResetItems += "Prior user passwords - reset manually if needed"
             $restoredCategories += "UsersGroups"
-            Write-Host "    [INFO] DC detected - AD object cleanup logged to MANUAL-RESET-REQUIRED.txt" -ForegroundColor Yellow
+            Write-Status "DC detected - AD object cleanup logged to MANUAL-RESET-REQUIRED.txt"
         }
 
         # Write MANUAL-RESET-REQUIRED.txt for irreversible items
@@ -260,11 +260,11 @@ $($manualResetItems | ForEach-Object { "- $_" } | Out-String)
 Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
 "@
             $manualResetContent | Out-File -FilePath $manualResetFile -Encoding UTF8
-            Write-Host "    [OK] Manual reset requirements written to MANUAL-RESET-REQUIRED.txt" -ForegroundColor Green
+            Write-Status -Level Success "Manual reset requirements written to MANUAL-RESET-REQUIRED.txt"
         }
     } catch {
         $restoreErrors += "Users/Groups: $($_.Exception.Message)"
-        Write-Host "    [WARN] User/group restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "User/group restore failed: $($_.Exception.Message)"
     }
 
     # -- 7. Restore Firewall Configuration -------------------------------------
@@ -303,10 +303,10 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         }
 
         $restoredCategories += "Firewall"
-        Write-Host "    [OK] Firewall configuration restored" -ForegroundColor Green
+        Write-Status -Level Success "Firewall configuration restored"
     } catch {
         $restoreErrors += "Firewall: $($_.Exception.Message)"
-        Write-Host "    [WARN] Firewall restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Firewall restore failed: $($_.Exception.Message)"
     }
 
     # -- 8. Restore Service Configurations -------------------------------------
@@ -319,11 +319,11 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
                 Set-Service -Name $svc.Name -StartupType $svc.StartType -ErrorAction Stop
             }
             $restoredCategories += "Services"
-            Write-Host "    [OK] Service configurations restored ($($services.Count) services)" -ForegroundColor Green
+            Write-Status -Level Success "Service configurations restored ($($services.Count) services)"
         }
     } catch {
         $restoreErrors += "Services: $($_.Exception.Message)"
-        Write-Host "    [WARN] Service restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Service restore failed: $($_.Exception.Message)"
     }
 
     # -- 9. Restore Registry Hives (last - overwrites WDigest/LSA values) ------
@@ -342,10 +342,10 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
             }
         }
         $restoredCategories += "Registry"
-        Write-Host "    [OK] Registry hives restored" -ForegroundColor Green
+        Write-Status -Level Success "Registry hives restored"
     } catch {
         $restoreErrors += "Registry: $($_.Exception.Message)"
-        Write-Host "    [WARN] Registry restore failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Registry restore failed: $($_.Exception.Message)"
     }
 
     # -- Post-restore checksum comparison ---------------------------------------
@@ -423,11 +423,11 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         }
 
         if ($checksumComparison.Mismatched -gt 0) {
-            Write-Host "  [WARN] $($checksumComparison.Mismatched) checksum(s) differ after restore" -ForegroundColor Yellow
+            Write-Status -Level Warning "$($checksumComparison.Mismatched) checksum(s) differ after restore"
             Write-Host "  Review: $($checksumComparison.Errors -join '; ')" -ForegroundColor Yellow
             $restoreErrors += "ChecksumMismatches: $($checksumComparison.Errors -join '; ')"
         } else {
-            Write-Host "  [OK] All $($checksumComparison.Matched) checksums match original backup" -ForegroundColor Green
+            Write-Status -Level Success "All $($checksumComparison.Matched) checksums match original backup"
         }
 
         # Clean up verification directory
@@ -436,7 +436,7 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         }
     } catch {
         $restoreErrors += "ChecksumComparison: $($_.Exception.Message)"
-        Write-Host "  [WARN] Checksum comparison failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Status -Level Warning "Checksum comparison failed: $($_.Exception.Message)"
     }
 
     # -- Summary ----------------------------------------------------------------

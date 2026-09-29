@@ -15,15 +15,15 @@
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $downloadURL -OutFile $splunkScript -UseBasicParsing
-            Write-Log -Level "SUCCESS" -Message "Downloaded Splunk installation script"
+            Write-Status -Level Success "Downloaded Splunk installation script" -LogOnly
 
             $splunkServer = "$($IP):9997"
 
             & $splunkScript $Version $splunkServer
 
-            Write-Log -Level "SUCCESS" -Message "Splunk installation completed"
+            Write-Status -Level Success "Splunk installation completed" -LogOnly
         } catch {
-            Write-Log -Level "ERROR" -Message "Splunk installation failed: $($_.Exception.Message)"
+            Write-Status -Level Error "Splunk installation failed: $($_.Exception.Message)"
             throw
         }
     }

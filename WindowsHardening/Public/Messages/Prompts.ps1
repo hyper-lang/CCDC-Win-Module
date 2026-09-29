@@ -26,7 +26,7 @@ function Read-YesNo {
             }
         } while ($true)
     } catch {
-        Write-Log -Level "ERROR" -Message "Error in Read-YesNo: $($_.Exception.Message)"
+        Write-Status -Level Error "Error in Read-YesNo: $($_.Exception.Message)"
         return "n"
     }
 }

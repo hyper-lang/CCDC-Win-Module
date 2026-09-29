@@ -11,13 +11,12 @@ function Protect-Mimikatz {
     Invoke-HardeningOperation -OperationName "Patch Mimikatz" -OSCompatibility $mimikatzCompatible -ProgressMessage "Disabling WDigest credential storage to prevent Mimikatz credential extraction" -ScriptBlock {
         $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
 
-        Write-Host "[INFO] This patch disables WDigest credential storage (UseLogonCredential = 0)" -ForegroundColor Cyan
-        Write-Host "[INFO] This prevents Mimikatz from extracting plaintext credentials from memory" -ForegroundColor Cyan
+        Write-Status "This patch disables WDigest credential storage (UseLogonCredential = 0)"
+        Write-Status "This prevents Mimikatz from extracting plaintext credentials from memory"
 
         Set-RegistryValue -Path $registryPath -Name "UseLogonCredential" -Value 0 -PropertyType "DWord" -OperationName "Patch Mimikatz" -CreatePathIfMissing
 
         Write-Host "Mimikatz (WDigest) patch applied successfully" -ForegroundColor Green
-        Write-Host "[INFO] System restart recommended for changes to take full effect" -ForegroundColor Yellow
-        Write-Log -Level "SUCCESS" -Message "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
+        Write-Status -Level Success "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
     }
 }
