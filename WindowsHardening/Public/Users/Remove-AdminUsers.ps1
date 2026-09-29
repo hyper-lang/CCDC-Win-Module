@@ -9,7 +9,7 @@ function Remove-AdminUsers {
             Write-Host "Cleaning administrator groups on the domain (Domain Admins, Enterprise Admins, Administrators)..." -ForegroundColor Cyan
             Write-Host "Please go back and add users that need access per the competition scenario" -ForegroundColor Cyan
 
-            $ExclusionList = @("Administrator", "ccdcuser1")
+            $ExclusionList = @("Administrator", "ccdcuser3")
 
             $adminGroupList = @("Domain Admins", "Enterprise Admins", "Administrators")
             foreach ($groupName in $adminGroupList) {

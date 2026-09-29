@@ -88,38 +88,26 @@ function Initialize-CompetitionUsers {
     $isDC = (Get-OperatingSystemInfo).IsDomainController
 
     if ($isDC) {
-        # DC path: change Administrator password + create ccdcuser1/2 locally + ccdcuser3 via AD
+        # DC path: change Administrator password + create ccdcuser2 (standard) and
+        # ccdcuser3 (Domain Admin) in AD. ccdcuser1 is local-only and is not created here.
         Write-Host "Changing Administrator password..." -ForegroundColor Green
         Set-UserPassword -Username "Administrator" -PasswordPrompt "Enter new password for Administrator: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
 
-        Write-Host "`nCreating local ccdcuser1 and ccdcuser2..."
-        @("ccdcuser1", "ccdcuser2") | ForEach-Object {
-            if (-not (Get-LocalUser -Name $_ -ErrorAction Ignore)) {
-                New-LocalUser -Name $_ -NoPassword
+        # Lookups use -Filter: Get-ADUser -Identity throws for a missing user even with
+        # -ErrorAction SilentlyContinue. New-ADUser without a password creates a disabled
+        # account, so each user is enabled once its password is set.
+        Write-Host "`nCreating domain users ccdcuser2 and ccdcuser3..."
+        foreach ($u in @("ccdcuser2", "ccdcuser3")) {
+            if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
+                New-ADUserAccount -Name $u -SamAccountName $u
             }
         }
-        Write-Host "`nSetting passwords for CCDC users..."
-        Set-UserPassword -Username "ccdcuser1" -PasswordPrompt "Enter password for ccdcuser1: " -AddToAdmins -WordlistData $WordlistData -SaltPhrase $SaltPhrase
+
+        Write-Host "`nSetting passwords for CCDC domain users..."
         Set-UserPassword -Username "ccdcuser2" -PasswordPrompt "Enter password for ccdcuser2: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-
-        # AD-specific: create ccdcuser3. Lookups use -Filter: Get-ADUser -Identity throws
-        # for a missing user even with -ErrorAction SilentlyContinue.
-        if (-not (Get-ADUser -Filter "SamAccountName -eq 'ccdcuser3'")) {
-            New-ADUserAccount -Name "ccdcuser3" -SamAccountName "ccdcuser3"
-        }
-        @("ccdcuser3") | ForEach-Object {
-            if (-not (Get-ADUser -Filter "SamAccountName -eq '$_'")) {
-                Write-Host "Domain user '$_' not found. Please create it before setting a password, or create it now using 'New-ADUser'." -ForegroundColor Yellow
-            }
-        }
-
-        Write-Host "`nSetting passwords for CCDC domain admin..."
-        foreach ($u in @("ccdcuser3")) {
-            if (Get-ADUser -Filter "SamAccountName -eq '$u'") {
-                Set-UserPassword -Username $u -PasswordPrompt "Enter password for ccdcuser3: " -AddToAdmins -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-                Enable-ADAccount -Identity "ccdcuser3"
-            }
-        }
+        Enable-ADAccount -Identity "ccdcuser2"
+        Set-UserPassword -Username "ccdcuser3" -PasswordPrompt "Enter password for ccdcuser3: " -AddToAdmins -WordlistData $WordlistData -SaltPhrase $SaltPhrase
+        Enable-ADAccount -Identity "ccdcuser3"
     } else {
         # Local path: change Administrator password + create ccdcuser1/2
         Write-Host "Changing Administrator password..." -ForegroundColor Green
