@@ -1,50 +1,48 @@
 ﻿function Invoke-WindowsHardening {
     <#
     .SYNOPSIS
-        Main entry point for Windows hardening operations.
-
+        Runs the full hardening sequence: every section orchestrator, in order.
     .DESCRIPTION
-        Performs comprehensive Windows hardening with OS detection, prerequisite checks,
-        and either quick-hardening or interactive menu mode.
+        Starts a fresh log, shows the OS and AD status detected at module import,
+        checks for administrator rights, then runs:
 
+          1. Invoke-UserHardening          - admin removal, Zulu password rotation, RDP group
+                                             reset, WDigest/LSA credential hardening
+          2. Invoke-ServiceHardening       - SMB + unused network protocols
+          3. Invoke-NetworkHardening       - firewall, remote-management teardown
+          4. Install-Splunk                - unless -SkipSplunk
+          5. Set-RestrictedExecutionPolicy - machine-wide Restricted
 
-    .PARAMETER QuickHarden
-        Run the quick-hardening sequence and exit. Alias: -q.
+        Each step is wrapped in Invoke-HardeningOperation, so one failure is counted and
+        reported without stopping the rest. Ends with the operation summary.
 
+        Prompts only for what is not passed: the Zulu salt phrase (-SaltPhrase) and the
+        Splunk server IP (-SplunkIP or -SkipSplunk). To pick individual steps instead,
+        use Invoke-HardeningMenu.
     .PARAMETER SkipPasswordChange
-        Skip password change during QuickHarden. Alias: -sp.
-
+        Skip Zulu account creation and password rotation. Alias: -sp.
     .PARAMETER SkipRDP
-        Skip Remove-RDP-Users during QuickHarden. Alias: -srdp.
-
+        Skip the RDP group reset and leave RDP enabled. Alias: -srdp.
     .PARAMETER FirewallPorts
-        Ports to allow through the firewall. Alias: -f.
-
+        Ports to allow ("80, 443", @("80","443"), or 80,443). If omitted, a domain
+        controller gets the common AD ports and any other machine gets Deny All only. Alias: -f.
     .PARAMETER SaltPhrase
-        Salt phrase for Zulu password generation, passed to quick-harden and the menu's
-        password options. If omitted, Zulu prompts for it. Alias: -s.
-
+        Salt phrase for Zulu password generation. If omitted, Zulu prompts for it. Alias: -s.
     .PARAMETER LogPath
         Path for log files. Default: C:\Windows\Logs\Hardening.
-
     .PARAMETER PreserveManagementPort
         Keep WinRM reachable: firewall Allow rules for TCP 5985/5986 are kept and WinRM is not
-        disabled. Applies to quick-harden and to the menu's firewall/network options. Use when
-        applying hardening over WinRM so the session is not locked out.
-
+        disabled. Use when applying hardening over WinRM so the session is not locked out.
     .PARAMETER SplunkIP
-        Splunk server IP, used by quick-harden and the menu's Splunk option. If omitted, they
-        prompt for it.
+        Splunk server IP. If omitted (and -SkipSplunk is not set), prompts for it.
     .PARAMETER SkipSplunk
-        When set, passed through to Start-QuickHarden so the Splunk installation step is skipped.
-        Useful for non-interactive runs with no Splunk server (avoids the Read-Host prompt,
-        which fails over WinRM).
+        Skip the Splunk installation step (no prompt).
+    .EXAMPLE
+        Invoke-WindowsHardening -SaltPhrase 'a long passphrase' -SkipSplunk
+        # Full run with no prompts.
     #>
     [CmdletBinding()]
     param(
-
-        [Alias("q")]
-        [switch]$QuickHarden,
 
         [Alias("sp")]
         [switch]$SkipPasswordChange,
@@ -68,35 +66,14 @@
     )
 
     # -- FirewallPorts parsing ----------------------------------------------
-    $ports = @()
-
-    if ($null -ne $FirewallPorts -and $FirewallPorts.Count -gt 0) {
-        try {
-            $portStrings = @()
-            foreach ($item in $FirewallPorts) {
-                if (-not [string]::IsNullOrWhiteSpace($item)) {
-                    $portStrings += $item.Split(',') | ForEach-Object { $_.Trim() } |
-                        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                }
-            }
-
-            $ports = @(
-                $portStrings | ForEach-Object {
-                    $port = [int]$_
-                    if ($port -lt 1 -or $port -gt 65535) {
-                        throw "Port $port is out of valid range (1-65535)"
-                    }
-                    $port
-                }
-            )
-
-            if ($ports.Count -gt 0) {
-                Write-Host "[INFO] Firewall ports provided via parameter: $($ports -join ', ')" -ForegroundColor Cyan
-            }
-        } catch {
-            Write-Host "[ERROR] Failed to parse FirewallPorts parameter: $($_.Exception.Message)" -ForegroundColor Red
-            throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
-        }
+    try {
+        $ports = ConvertTo-PortList -Ports $FirewallPorts
+    } catch {
+        Write-Host "[ERROR] Failed to parse FirewallPorts parameter: $($_.Exception.Message)" -ForegroundColor Red
+        throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
+    }
+    if ($ports.Count -gt 0) {
+        Write-Host "[INFO] Firewall ports provided via parameter: $($ports -join ', ')" -ForegroundColor Cyan
     }
 
     # $global:Error: inside a module, $Error is a separate module-scoped (empty) collection.
@@ -104,7 +81,7 @@
 
     # -- Banner --------------------------------------------------------------
     Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  Windows Hardening Script v2.0" -ForegroundColor Green
+    Write-Host "  Windows Hardening MODULE v1.0" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
 
     # -- Initialize (OS detection, logging, context) -------------------------
@@ -128,26 +105,17 @@
         }
     }
 
-    # -- AD status display ---------------------------------------------------
-    try {
-        $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
-        $isDomainJoined = $computerSystem.PartOfDomain
-
+    # -- AD status display (detected at module import) ------------------------
+    if ($osInfo) {
         Write-Host "`n========================================" -ForegroundColor Cyan
-        if ($isDomainJoined) {
-            $domain = $computerSystem.Domain
-            Write-Host "  Active Directory Status: DOMAIN JOINED" -ForegroundColor Green
-            Write-Host "  Domain: $domain" -ForegroundColor White
+        if ($osInfo.IsDomainJoined) {
+            Write-Host "  Active Directory Status: DOMAIN JOINED$(if ($osInfo.IsDomainController) { ' (Domain Controller)' })" -ForegroundColor Green
+            Write-Host "  Domain: $($osInfo.Domain)" -ForegroundColor White
         } else {
-            $workgroup = $computerSystem.Workgroup
             Write-Host "  Active Directory Status: NOT DOMAIN JOINED" -ForegroundColor Yellow
-            Write-Host "  Workgroup: $workgroup" -ForegroundColor White
+            Write-Host "  Workgroup: $($osInfo.Workgroup)" -ForegroundColor White
         }
         Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-    } catch {
-        Write-Host "`n[WARNING] Failed to detect Active Directory status: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "Continuing with script execution..." -ForegroundColor Yellow
         Write-Host ""
     }
 
@@ -160,15 +128,40 @@
         throw "Pre-flight checks failed: $($_.Exception.Message)"
     }
 
-    # -- QuickHarden path ----------------------------------------------------
-    if ($QuickHarden) {
-        Start-QuickHarden -SkipPasswordChange:$SkipPasswordChange -SkipRDP:$SkipRDP -SplunkIP $SplunkIP -FirewallPorts $ports -PreserveManagementPort:$PreserveManagementPort -SkipSplunk:$SkipSplunk -SaltPhrase $SaltPhrase
-    } else {
-        # -- Interactive menu loop --------------------------------------------
-        Invoke-HardeningMenu -FirewallPorts $ports -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
+    # -- Hardening sequence ---------------------------------------------------
+    if ($SkipPasswordChange) {
+        Write-Host "[NOTE] Password rotation will be skipped (-sp)" -ForegroundColor Yellow
+    }
+    if ($SkipRDP) {
+        Write-Host "[NOTE] RDP group reset and RDP disable will be skipped (-srdp)" -ForegroundColor Yellow
     }
 
-    # -- Post-loop: final summary --------------------------------------------
+    Write-Host "`nStep 1/5: Hardening users and credentials..." -ForegroundColor Cyan
+    Invoke-UserHardening -SkipPasswordChange:$SkipPasswordChange -SkipRDP:$SkipRDP -SaltPhrase $SaltPhrase
+
+    Write-Host "`nStep 2/5: Hardening services (SMB + unused network protocols)..." -ForegroundColor Cyan
+    Invoke-ServiceHardening
+
+    Write-Host "`nStep 3/5: Hardening network and remote access..." -ForegroundColor Cyan
+    Invoke-NetworkHardening -NonInteractive -FirewallPorts $ports -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
+
+    Write-Host "`nStep 4/5: Configuring Splunk..." -ForegroundColor Cyan
+    if ($SkipSplunk) {
+        Write-Host "  [SKIPPED] Splunk configuration skipped (-SkipSplunk)" -ForegroundColor Yellow
+        Write-Log -Level "INFO" -Message "Splunk configuration skipped per -SkipSplunk"
+    } else {
+        if ([string]::IsNullOrEmpty($SplunkIP)) {
+            $SplunkIP = Read-Host "`nInput IP address of Splunk Server"
+        }
+        Install-Splunk -IP $SplunkIP
+    }
+
+    Write-Host "`nStep 5/5: Setting Execution Policy to Restricted..." -ForegroundColor Cyan
+    Set-RestrictedExecutionPolicy
+
+    Write-Host "`nAll sections applied. Next: enable Windows Defender, then run Windows Updates." -ForegroundColor Yellow
+
+    # -- Final summary -------------------------------------------------------
     Write-Host "`n***Script Completed!!!***" -ForegroundColor Green
     Show-OperationSummary
 

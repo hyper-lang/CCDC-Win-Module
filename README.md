@@ -29,6 +29,25 @@ protection for both Active Directory domain controllers and local
 
 ## Installation
 
+### One-liner (download from GitHub and import)
+
+Run in an elevated Windows PowerShell 5.1 session:
+
+```powershell
+irm https://raw.githubusercontent.com/hyper-lang/CCDC-Win-Module/main/loader.ps1 | iex
+```
+
+`loader.ps1` downloads the repository archive, extracts it to
+`$env:TEMP\CCDC-Win-Module`, allows unsigned scripts for the current session only
+(`-Scope Process`), and imports the module. Nothing is installed; open a new
+session and run it again to reload. To pin a branch, tag, or commit:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hyper-lang/CCDC-Win-Module/main/loader.ps1))) -Ref v1.0.0
+```
+
+### From a local copy
+
 ```powershell
 # From the project root
 Import-Module ./WindowsHardening -Force
@@ -53,23 +72,24 @@ Every function is exported. Files are grouped by purpose:
 WindowsHardening/
 ├── WindowsHardening.psd1 / .psm1
 ├── Public/
-│   ├── Invoke-WindowsHardening.ps1, Invoke-HardeningMenu.ps1, Start-QuickHarden.ps1
+│   ├── Invoke-WindowsHardening.ps1, Invoke-HardeningMenu.ps1
 │   ├── Users/       Invoke-UserHardening, Set-ZuluPassword, Set-UserPassword,
 │   │                Initialize-CompetitionUsers, New-ADUserAccount, Remove-AdminUsers,
 │   │                Remove-RDPUsers, Add-RDPUsers, Protect-Mimikatz
 │   ├── Network/     Invoke-NetworkHardening, Set-FirewallConfiguration, Remove-RemoteManagement
 │   ├── Services/    Invoke-ServiceHardening, Disable-UnusedNetworkProtocols, Update-SMB,
 │   │                Set-RestrictedExecutionPolicy
-│   ├── SIEM/        Install-Splunk
+│   ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
 │   ├── Patching/    Install-EternalBluePatch
 │   ├── Messages/    Write-Log, Show-OperationSummary, Start-HardeningLog, Read-YesNo,
 │   │                Read-CommaList, Read-SecretInput
-│   ├── Helpers/     Initialize-System, Initialize-Context, Get-HardeningContext,
-│   │                Test-Prerequisites, Test-IsDomainController, Get-OperatingSystemInfo,
-│   │                Invoke-HardeningOperation, Set-RegistryValue, Get-FileFromUrl,
-│   │                Show-Users, New-Password
-│   └── Inject/
-├── Data/            ports.json, patchURLs.json, wordlist.txt, advancedAuditing.ps1
+│   ├── Helpers/     One file per function, named after it: Initialize-System,
+│   │                Initialize-Context, Get-HardeningContext, Test-Prerequisites,
+│   │                Test-IsAdministrator, Test-IsDomainController, Get-OperatingSystemInfo,
+│   │                Invoke-HardeningOperation, ConvertTo-PortList, Set-RegistryValue,
+│   │                Get-FileFromUrl, Show-Users, New-Password, ConvertTo-WordIndex
+│   └── Inject/      Reserved for inject-specific functions (empty for now)
+├── Data/            ports.json, patchURLs.json, wordlist.txt
 └── Dev/             Experimental: Backup-WindowsState, Restore-WindowsState + helpers
 ```
 
@@ -88,34 +108,41 @@ work as aliases: `New-Zulu-Integration`/`New-ZuluIntegration` → `Set-ZuluPassw
 `Revert-WindowsState` → `Restore-WindowsState`, `Print-Users` → `Show-Users`,
 `Print-Log` → `Show-OperationSummary`.
 
-Many functions read the shared hardening context (DC status, OS, salt phrase,
-log path). Setup (`Initialize-System`) runs automatically the first time a
-hardening step runs in a session, so functions can be called on their own. It
-detects whether the machine is a domain controller (NTDS service present); run
-`Initialize-System -Force` to start over with a new log file.
-`Get-HardeningContext` shows what the module detected.
+OS and AD status (version, domain controller or not, domain membership) is
+detected once, when the module is imported, and every function reads that cached
+result. The rest of setup (`Initialize-System`: log file, data-file check) runs
+automatically the first time a hardening step runs in a session, so functions can
+be called on their own; run `Initialize-System -Force` to start over with a new
+log file. `Get-HardeningContext` shows what the module detected.
 
 ---
 
 ## Quick Start
 
-The simplest path is the main entry point in **non-interactive** mode:
+There are two entry points:
+
+- **`Invoke-WindowsHardening`** runs everything: each section orchestrator in
+  order (users, services, network, Splunk, execution policy), then a summary.
+- **`Invoke-HardeningMenu`** lets you pick individual sections or steps.
 
 ```powershell
 Import-Module ./WindowsHardening -Force
 
-# Run the full quick-hardening sequence (domain controller vs. local is auto-detected)
-Invoke-WindowsHardening -QuickHarden
+# Full run, no prompts (DC vs. member/workstation is auto-detected)
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
 
-# Same, but keep WinRM reachable during the run (e.g. applied over a remote session)
-Invoke-WindowsHardening -QuickHarden -PreserveManagementPort
+# Same, but keep WinRM reachable (e.g. applied over a remote session)
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -PreserveManagementPort
 
 # Skip password change and RDP-user reset
-Invoke-WindowsHardening -QuickHarden -SkipPasswordChange -SkipRDP
+Invoke-WindowsHardening -SkipPasswordChange -SkipRDP -SkipSplunk
 
-# Interactive menu mode
-Invoke-WindowsHardening
+# Pick individual steps
+Invoke-HardeningMenu
 ```
+
+`Invoke-WindowsHardening` prompts only for values you do not pass: the Zulu salt
+phrase (`-SaltPhrase`) and the Splunk server IP (`-SplunkIP`, or `-SkipSplunk`).
 
 Optionally take a backup first (experimental):
 
@@ -189,6 +216,19 @@ Downloads and installs the EternalBlue (MS17-010) patch. Requires
 Install-EternalBluePatch
 ```
 
+### `Enable-AdvancedAuditing`
+
+Enables auditing for logon, account-management, object-access, policy-change,
+privilege-use, and process events, adds a file-system audit rule on each fixed
+drive, and turns on firewall logging (allowed + blocked). Always non-interactive.
+
+```powershell
+Enable-AdvancedAuditing
+
+# Or via the menu (option 15)
+Invoke-HardeningMenu -Force -Selection 15
+```
+
 ### `Install-Splunk`
 
 Downloads and runs the Splunk Universal Forwarder setup script. `-IP` is
@@ -204,12 +244,17 @@ Invoke-HardeningMenu -Force -Selection 16
 
 ### `Invoke-HardeningMenu`
 
-The interactive menu. In non-interactive
-mode use `-Force -Selection` to dispatch a single option directly.
+The interactive menu: pick a section (options 2-4) or a single step (5-18);
+option 1 runs `Invoke-WindowsHardening` (all sections, new log file). Loops until
+`Q`. Requires an elevated session. With `-Force -Selection`, runs one option and
+returns.
 
 ```powershell
 # Interactive
 Invoke-HardeningMenu
+
+# Keep WinRM open when the firewall/network options run over a WinRM session
+Invoke-HardeningMenu -PreserveManagementPort
 
 # Non-interactive: run a specific option and exit
 Invoke-HardeningMenu -Force -Selection 11       # Configure Firewall
@@ -218,23 +263,22 @@ Invoke-HardeningMenu -Force -Selection A        # Re-run setup
 
 ### `Invoke-WindowsHardening`
 
-The main entry point. See [Parameters and Aliases](#parameters-and-aliases).
+Runs the full hardening sequence: `Invoke-UserHardening` (admin removal, then
+password rotation) → `Invoke-ServiceHardening` → `Invoke-NetworkHardening` → `Install-Splunk` →
+`Set-RestrictedExecutionPolicy`, then prints the operation summary. Each step is
+wrapped, so one failure is counted and reported without stopping the rest. See
+[Parameters and Aliases](#parameters-and-aliases).
 
 ```powershell
-# Interactive menu
-Invoke-WindowsHardening
-
-# Non-interactive quick-harden
-Invoke-WindowsHardening -QuickHarden -SkipPasswordChange
-Invoke-WindowsHardening -QuickHarden -FirewallPorts "80, 443" -SaltPhrase "a long passphrase"
-
-# Menu over a WinRM session: the menu's firewall/network options keep WinRM open
-Invoke-WindowsHardening -PreserveManagementPort
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
+Invoke-WindowsHardening -FirewallPorts "80, 443" -SaltPhrase "a long passphrase" -SplunkIP 10.0.0.5
 ```
 
-WinRM is disabled by default (by `Remove-RemoteManagement`); pass
-`-PreserveManagementPort` to keep it. `-FirewallPorts`, `-PreserveManagementPort`,
-`-SplunkIP`, and `-SaltPhrase` apply to both quick-harden and the menu.
+Without `-FirewallPorts`, a domain controller gets the common AD ports and any
+other machine gets Deny All Inbound only. WinRM is disabled (by
+`Remove-RemoteManagement`) unless `-PreserveManagementPort` is given. The
+execution policy is set to Restricted machine-wide, so new sessions need
+`-ExecutionPolicy Bypass` to load the module afterwards.
 
 ### `Protect-Mimikatz` (alias `Patch-Mimikatz`)
 
@@ -296,8 +340,8 @@ Set-FirewallConfiguration -FirewallPorts 80,443
 Set-FirewallConfiguration -FirewallPorts 80,443 -PreserveManagementPort
 ```
 
-> `-FromQuickHarden` is used internally by `Start-QuickHarden`; you generally
-> do not call it directly.
+> `-NonInteractive` (never prompt; AD ports on a DC, Deny All only otherwise)
+> is what `Invoke-WindowsHardening` uses.
 
 ### `Set-ZuluPassword` (formerly `New-Zulu-Integration`)
 
@@ -320,24 +364,9 @@ Set-ZuluPassword -OutputDirectory "C:\zulu"
 ```
 
 Parameter notes: `-SaltPhrase` (aliases `-s`, `-Seed`) sets the salt phrase;
-`Invoke-WindowsHardening -SaltPhrase` passes it here for quick-harden and the
-menu's password options. `-U`/`-u` both mean `-UsersFile` (PowerShell aliases
+`Invoke-WindowsHardening -SaltPhrase` and `Invoke-HardeningMenu -SaltPhrase`
+pass it here. `-U`/`-u` both mean `-UsersFile` (PowerShell aliases
 ignore case); spell out `-User` for a single user.
-
-### `Start-QuickHarden`
-
-Runs the quick-hardening sequence: services (SMB + unnecessary services) →
-users/passwords/credentials → firewall + remote management → Splunk →
-machine-wide (LocalMachine) execution policy set to Restricted. New sessions
-need `-ExecutionPolicy Bypass` to load the module afterwards.
-
-```powershell
-# Interactive (prompts for the Splunk IP)
-Start-QuickHarden
-
-# Non-interactive
-Start-QuickHarden -SkipPasswordChange -SkipRDP -SplunkIP 10.0.0.5 -FirewallPorts 80,443 -PreserveManagementPort
-```
 
 ### `Update-SMB` (alias `Upgrade-SMB`)
 
@@ -358,27 +387,25 @@ Commonly used parameters and their short aliases:
 
 | Parameter | Alias | Applies to |
 |---|---|---|
-| `-QuickHarden` | `-q` | `Invoke-WindowsHardening` |
-| `-SkipPasswordChange` | `-sp` | `Invoke-WindowsHardening`, `Start-QuickHarden` |
-| `-SkipRDP` | `-srdp` | `Invoke-WindowsHardening`, `Start-QuickHarden` |
+| `-SkipPasswordChange` | `-sp` | `Invoke-WindowsHardening` |
+| `-SkipRDP` | `-srdp` | `Invoke-WindowsHardening` |
 | `-FirewallPorts` | `-f` | `Invoke-WindowsHardening`, `Set-FirewallConfiguration` |
-| `-SaltPhrase` | `-s` | `Invoke-WindowsHardening`, `Start-QuickHarden`, `Invoke-UserHardening` |
+| `-SaltPhrase` | `-s` | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Invoke-UserHardening` |
 | `-LogPath` | — | `Invoke-WindowsHardening` (default `C:\Windows\Logs\Hardening`) |
-| `-PreserveManagementPort` | — | `Invoke-WindowsHardening`, `Start-QuickHarden`, `Set-FirewallConfiguration` |
+| `-PreserveManagementPort` | — | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Set-FirewallConfiguration` |
 
 ### `Invoke-WindowsHardening` parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `-QuickHarden` / `-q` | switch | `$false` | Run quick-hardening and exit |
-| `-SkipPasswordChange` / `-sp` | switch | `$false` | Skip password change during QuickHarden |
-| `-SkipRDP` / `-srdp` | switch | `$false` | Skip RDP-user removal during QuickHarden |
-| `-FirewallPorts` / `-f` | string[] | — | Ports to allow; supports comma-separated (`"80, 443"`) |
+| `-SkipPasswordChange` / `-sp` | switch | `$false` | Skip Zulu account creation and password rotation |
+| `-SkipRDP` / `-srdp` | switch | `$false` | Skip the RDP group reset and leave RDP enabled |
+| `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
 | `-SaltPhrase` / `-s` | string | — | Salt phrase for Zulu passwords (else Zulu prompts) |
 | `-LogPath` | string | `C:\Windows\Logs\Hardening` | Log output directory |
 | `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled) |
-| `-SplunkIP` | string | — | Splunk server IP for quick-harden and the menu (else prompts) |
-| `-SkipSplunk` | switch | `$false` | Skip the Splunk step during QuickHarden |
+| `-SplunkIP` | string | — | Splunk server IP (else prompts) |
+| `-SkipSplunk` | switch | `$false` | Skip the Splunk step (no prompt) |
 
 ### `Add-RDPUsers` parameters
 
@@ -405,7 +432,11 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Description |
 |---|---|---|
 | `-Force` | switch | Dispatch a single selection and exit (no menu loop) |
-| `-Selection` | string | Menu option when `-Force` (`0`, `A`, `1`–`17`) |
+| `-Selection` | string | Menu option when `-Force` (`0`, `A`, `1`–`18`) |
+| `-FirewallPorts` | int[] | Ports for the firewall options |
+| `-PreserveManagementPort` | switch | Keep WinRM reachable in the firewall/network options |
+| `-SplunkIP` | string | Splunk server IP (else prompts) |
+| `-SaltPhrase` | string | Salt phrase for the Zulu options (else prompts) |
 
 ### `Restore-WindowsState` parameters
 
@@ -418,23 +449,11 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Description |
 |---|---|---|
 | `-FirewallPorts` | int[] | Ports to allow |
-| `-FromQuickHarden` | switch | Internal — called by `Start-QuickHarden` |
+| `-NonInteractive` | switch | Never prompt (used by `Invoke-WindowsHardening`) |
 | `-PreserveManagementPort` | switch | Keep Allow rules for WinRM (TCP 5985/5986) |
 
 > There is **no** `-Force` parameter on `Set-FirewallConfiguration`. Prompting is
 > suppressed by providing `-FirewallPorts`.
-
-### `Start-QuickHarden` parameters
-
-| Parameter | Alias | Description |
-|---|---|---|
-| `-SkipPasswordChange` | `-sp` | Skip password change / user creation |
-| `-SkipRDP` | `-srdp` | Skip RDP-user removal |
-| `-SplunkIP` | — | Splunk server IP (else prompts) |
-| `-FirewallPorts` | — | Ports to allow (default: AD ports on a DC, Deny All only on local) |
-| `-PreserveManagementPort` | — | Keep WinRM reachable |
-| `-SaltPhrase` | — | Salt phrase for Zulu (else prompts) |
-| `-SkipSplunk` | — | Skip the Splunk step |
 
 ---
 
@@ -496,7 +515,7 @@ $result.IsDomainController # $true when the target is a DC (never demoted)
 ```powershell
 # Typical full cycle
 $backup = Backup-WindowsState
-Invoke-WindowsHardening -QuickHarden
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
 Restore-WindowsState -BackupPath $backup.Path
 ```
 

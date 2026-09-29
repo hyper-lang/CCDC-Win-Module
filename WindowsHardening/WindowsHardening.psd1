@@ -12,7 +12,6 @@
         # -- Public/ - entry points ------------------------------------------
         'Invoke-WindowsHardening'
         'Invoke-HardeningMenu'
-        'Start-QuickHarden'
 
         # -- Public/Users/ ---------------------------------------------------
         'Invoke-UserHardening'
@@ -39,6 +38,7 @@
 
         # -- Public/SIEM/ -----------------------------------------------------
         'Install-Splunk'
+        'Enable-AdvancedAuditing'
 
         # -- Public/Patching/ ------------------------------------------------
         'Install-EternalBluePatch'
@@ -66,6 +66,8 @@
         'Show-Users'
         'New-Password'
         'ConvertTo-WordIndex'
+        'Test-IsAdministrator'
+        'ConvertTo-PortList'
 
         # -- Dev/ - experimental ---------------------------------------------
         'Backup-WindowsState'

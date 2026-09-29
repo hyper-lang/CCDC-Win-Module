@@ -108,9 +108,9 @@ function Set-OperationStatus {
 # Operations listed in the run summary. Each name must match the -OperationName
 # (or Set-OperationStatus key) its function uses.
 $script:TrackedOperations = @(
-    "Initialize Context", "Quick Harden",
+    "Initialize Context",
     "Remove Admin Users", "Remove RDP Users", "Add RDP Users",
-    "Add Competition Users", "Change Passwords", "Patch Mimikatz",
+    "Zulu Passwords", "Add Competition Users", "Change Passwords", "Patch Mimikatz",
     "Configure Firewall", "Remove Remote Management",
     "Disable Unused Network Protocols", "Upgrade SMB",
     "Enable Advanced Auditing", "Configure Splunk", "EternalBlue Mitigated",

@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# Registry.ps1 - Exported registry helper with error handling and logging.
+# Set-RegistryValue.ps1 - Registry helper with error handling and logging.
 
 function Set-RegistryValue {
     [CmdletBinding()]

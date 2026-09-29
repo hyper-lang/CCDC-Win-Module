@@ -24,10 +24,9 @@
         Keep firewall allow-rules for WinRM (TCP 5985/5986) and skip the WinRM teardown
         in Remove-RemoteManagement. Pass this when running remotely over WinRM.
 
-    .PARAMETER FromQuickHarden
-        Internal flag - passed through to Set-FirewallConfiguration to signal that
-        it is being called as part of an automated quick-harden run (suppresses
-        certain interactive prompts inside Set-FirewallConfiguration).
+    .PARAMETER NonInteractive
+        Passed to Set-FirewallConfiguration: never prompt. Without -FirewallPorts,
+        a DC gets the common AD ports and any other machine gets Deny All only.
 
     .PARAMETER FirewallPorts
         Ports to allow, passed to Set-FirewallConfiguration.
@@ -57,7 +56,7 @@
     param(
         [switch]$PreserveManagementPort,
 
-        [switch]$FromQuickHarden,
+        [switch]$NonInteractive,
 
         [int[]]$FirewallPorts,
 
@@ -73,7 +72,7 @@
 
     # Step 1: Firewall
     Write-Host "`n[Network 1/2] Configuring firewall..." -ForegroundColor Cyan
-    Set-FirewallConfiguration -FromQuickHarden:$FromQuickHarden -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort
+    Set-FirewallConfiguration -NonInteractive:$NonInteractive -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort
 
     # Step 2: Remote management teardown
     if (-not $SkipRemoteManagement) {

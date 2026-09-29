@@ -1,8 +1,7 @@
 ﻿#Requires -Version 5.1
 
-# System.ps1 - Initialize-System, the module's single setup path: OS detection,
-# logging, and context (required files, DC status). Idempotent, so every hardening
-# step can call it (via Invoke-HardeningOperation) when run on its own.
+# Initialize-System.ps1 - The module's single setup path: logging and context. Idempotent, so every
+# hardening step can call it (via Invoke-HardeningOperation) when run on its own.
 
 function Initialize-System {
     <#

@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# OSInfo.ps1 - Operating system detection.
+# Get-OperatingSystemInfo.ps1 - Operating system and DC detection (runs once at module import).
 
 function Get-OperatingSystemInfo {
     [CmdletBinding()]
@@ -32,6 +32,14 @@ function Get-OperatingSystemInfo {
         $buildNumber = $osInfo.BuildNumber
         $productType = $osInfo.ProductType
         $isDomainController = Test-IsDomainController
+
+        # Domain membership (a member server or workstation is joined but not a DC).
+        try {
+            $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+        } catch {
+            try { $computerSystem = Get-WmiObject -Class Win32_ComputerSystem -ErrorAction Stop } catch { $computerSystem = $null }
+        }
+        $isDomainJoined = [bool]($computerSystem -and $computerSystem.PartOfDomain)
 
         $edition = $osInfo.OperatingSystemSKU
         $editionName = switch ($edition) {
@@ -111,9 +119,15 @@ function Get-OperatingSystemInfo {
             IsServerCore = $isServerCore
             ProductType  = $productType
             IsDomainController = $isDomainController
+            IsDomainJoined     = $isDomainJoined
+            Domain             = if ($isDomainJoined) { $computerSystem.Domain } else { $null }
+            Workgroup          = if ($computerSystem -and -not $isDomainJoined) { $computerSystem.Workgroup } else { $null }
         }
 
-        Write-Host "`n[INFO] OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)" -ForegroundColor Cyan
+        $role = if ($isDomainController) { "Domain Controller ($($result.Domain))" }
+                elseif ($isDomainJoined) { "domain member ($($result.Domain))" }
+                else { 'not domain-joined' }
+        Write-Host "`n[INFO] OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition) - $role" -ForegroundColor Cyan
         Write-Log -Level "INFO" -Message "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)"
         if ($isDomainController) {
             Write-Log -Level "INFO" -Message "Domain Controller detected - AD operations enabled"

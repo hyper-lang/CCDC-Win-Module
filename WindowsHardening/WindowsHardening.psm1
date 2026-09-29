@@ -2,9 +2,9 @@
 
 # WindowsHardening Module Loader
 # Dot-sources Public/**/*.ps1 then Dev/*.ps1 (sorted alphabetically)
-# Initializes $script:HardeningContext placeholder
+# Initializes $script:HardeningContext, then detects OS and DC status (see end of file)
 
-# Bundled data files (ports.json, patchURLs.json, wordlist.txt, advancedAuditing.ps1)
+# Bundled data files (ports.json, patchURLs.json, wordlist.txt)
 $script:DataPath = Join-Path $PSScriptRoot 'Data'
 $script:DefaultLogPath = 'C:\Windows\Logs\Hardening'
 
@@ -46,4 +46,13 @@ if (Test-Path $devPath) {
         ForEach-Object {
             . $_.FullName
         }
+}
+
+# Detect the OS and DC status once, at import, so orchestrators and standalone
+# functions all read the same cached $script:HardeningContext.OS. Logging and
+# data-file setup stay in Initialize-System, which runs on first use.
+try {
+    $null = Get-OperatingSystemInfo
+} catch {
+    Write-Warning "OS detection failed at import; OS-specific steps will be skipped: $($_.Exception.Message)"
 }

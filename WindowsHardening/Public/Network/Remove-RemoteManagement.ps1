@@ -190,13 +190,23 @@
                 Write-Log -Level "WARNING" -Message "Could not remove RDP firewall rules: $($_.Exception.Message)"
             }
 
-            # Stop TermService (Remote Desktop Services)
+            # Stop TermService (Remote Desktop Services). Stop-Service would block until the
+            # service stops, which takes ~10 minutes on Server 2022 while the RDP listener is
+            # up. RDP is already denied above, so request the stop, wait briefly, and move on;
+            # the Service Control Manager finishes the stop in the background.
             try {
                 $svc = Get-Service -Name TermService -ErrorAction Ignore
                 if ($svc -and $svc.Status -eq 'Running') {
-                    Stop-Service -Name TermService -Force -ErrorAction SilentlyContinue
-                    Write-Host "  [RDP] TermService stopped" -ForegroundColor Green
-                    Write-Log -Level "SUCCESS" -Message "TermService stopped"
+                    $svc.Stop()
+                    try {
+                        $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+                        Write-Host "  [RDP] TermService stopped" -ForegroundColor Green
+                        Write-Log -Level "SUCCESS" -Message "TermService stopped"
+                    } catch [System.ServiceProcess.TimeoutException] {
+                        Write-Host "  [RDP] TermService stop requested; still stopping after 30s (continuing)" -ForegroundColor Yellow
+                        Write-Log -Level "WARNING" -Message "TermService still stopping after 30s; stop continues in the background"
+                        if ($global:Error.Count -gt 0) { $global:Error.RemoveAt(0) }
+                    }
                 }
                 # Note: TermService StartupType is left as-is (Manual) because changing
                 # it to Disabled can break RDS licensing and other Windows subsystems.

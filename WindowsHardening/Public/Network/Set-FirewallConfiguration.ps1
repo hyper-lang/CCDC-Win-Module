@@ -9,7 +9,7 @@
     "Deny All Inbound" rule for security. It then handles three scenarios:
 
     - -FirewallPorts given: allows exactly those ports (no prompts).
-    - -FromQuickHarden without ports: Deny All only for Local; common AD/DC ports for AD.
+    - -NonInteractive without ports: Deny All only for Local; common AD/DC ports for AD.
     - Neither: prompts for ports and confirmation.
 
     Domain-vs-Local branching is driven by $script:HardeningContext.OS.IsDomainController.
@@ -17,8 +17,8 @@
 .PARAMETER FirewallPorts
     Ports to allow. When given, no prompts are shown and no ports are added automatically.
 
-.PARAMETER FromQuickHarden
-    Called from the quick-harden sequence: never prompts.
+.PARAMETER NonInteractive
+    Never prompt (used by Invoke-WindowsHardening).
 
 .PARAMETER PreserveManagementPort
     When set, creates Allow rules for TCP 5986 (WinRM-HTTPS) and TCP 5985
@@ -31,7 +31,7 @@ function Set-FirewallConfiguration {
     param(
         [int[]]$FirewallPorts,
 
-        [switch]$FromQuickHarden,
+        [switch]$NonInteractive,
 
         [switch]$PreserveManagementPort
     )
@@ -53,8 +53,8 @@ function Set-FirewallConfiguration {
                 Write-Host "  [INFO] Using firewall ports from parameter: $($portsToAllow -join ', ')" -ForegroundColor Yellow
                 Write-Log -Level "INFO" -Message "Using firewall ports from parameter: $($portsToAllow -join ', ')"
             }
-            # Quick-harden without ports: AD ports on a DC, Deny All only on a local machine
-            elseif ($FromQuickHarden) {
+            # Non-interactive without ports: AD ports on a DC, Deny All only on a local machine
+            elseif ($NonInteractive) {
                 if ($isDC) {
                     $portsToAllow = $commonADorDC
                     Write-Host "  [INFO] Using common AD ports: $($portsToAllow -join ', ')" -ForegroundColor Yellow

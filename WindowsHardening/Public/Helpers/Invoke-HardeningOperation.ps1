@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# Operations.ps1 - Invoke-HardeningOperation, the runner every hardening step executes inside.
+# Invoke-HardeningOperation.ps1 - The runner every hardening step executes inside.
 
 function Invoke-HardeningOperation {
     [CmdletBinding()]

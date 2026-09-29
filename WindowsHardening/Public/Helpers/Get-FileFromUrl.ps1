@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# Download.ps1 - File download helper.
+# Get-FileFromUrl.ps1 - File download helper.
 
 function Get-FileFromUrl {
     param(

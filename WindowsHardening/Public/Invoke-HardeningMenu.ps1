@@ -1,4 +1,12 @@
 ﻿function Invoke-HardeningMenu {
+    <#
+    .SYNOPSIS
+        Interactive menu for running individual hardening steps or sections.
+    .DESCRIPTION
+        Loops until Q. Option 1 runs the full sequence (Invoke-WindowsHardening, which
+        starts a new log); 2-4 run one section; 5-18 run single steps. With -Force and
+        -Selection, runs one option and returns (no loop).
+    #>
     [CmdletBinding()]
     param(
         [switch]$Force,
@@ -19,8 +27,8 @@
         Write-Host "Setup runs automatically on the first task; (A) re-runs it (new log file)." -ForegroundColor Yellow
 
         Write-Host "`n--- Orchestrators (run a full section) ---" -ForegroundColor Magenta
-        Write-Host "  1) Quick Harden       - all sections in sequence (recommended)"
-        Write-Host "  2) Harden Users       - admin removal, RDP reset, passwords, credentials"
+        Write-Host "  1) Harden Everything  - Invoke-WindowsHardening (all sections, new log)"
+        Write-Host "  2) Harden Users       - admin removal, passwords, RDP reset, credentials"
         Write-Host "  3) Harden Network     - firewall + remove remote management"
         Write-Host "  4) Harden Services    - SMB hardening + disable unused network protocols"
 
@@ -47,7 +55,7 @@
         Write-Host " 18) Set Execution Policy to Restricted"
 
         Write-Host "`n--- Misc ---" -ForegroundColor Cyan
-        Write-Host "  A) Re-run setup (download files, detect DC, new log file)"
+        Write-Host "  A) Re-run setup (check data files, new log file; OS/DC detection runs at import)"
         Write-Host "  0) Print Execution Summary"
         Write-Host ""
         Write-Host "  Q) Quit" -ForegroundColor DarkGray
@@ -64,8 +72,8 @@
 
             # -- Orchestrators ------------------------------------------------
             '1'  {
-                Write-Host "`n*** Quick Hardening (all sections) ***" -ForegroundColor Magenta
-                Start-QuickHarden -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
+                Write-Host "`n*** Harden Everything (all sections) ***" -ForegroundColor Magenta
+                Invoke-WindowsHardening -FirewallPorts $FirewallPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
             }
             '2'  {
                 Write-Host "`n*** Harden Users & Credentials ***" -ForegroundColor Magenta
@@ -140,21 +148,8 @@
             # -- Monitoring & Patching -----------------------------------------
             '15' {
                 Write-Host "`n*** Enabling Advanced Auditing and Firewall Logging ***" -ForegroundColor Magenta
-                $auditScript = Join-Path $script:DataPath 'advancedAuditing.ps1'
-                if (Test-Path $auditScript) {
-                    try {
-                        & $auditScript
-                        Set-OperationStatus "Enable Advanced Auditing" "Executed successfully"
-                        Write-Log -Level "SUCCESS" -Message "Advanced auditing script executed"
-                    } catch {
-                        Set-OperationStatus "Enable Advanced Auditing" "Failed with error: $($_.Exception.Message)"
-                        Write-Log -Level "ERROR" -Message "Advanced auditing script failed: $($_.Exception.Message)"
-                    }
-                } else {
-                    Write-Host "advancedAuditing.ps1 not found, skipping..." -ForegroundColor Yellow
-                    Set-OperationStatus "Enable Advanced Auditing" "Skipped - file not found"
-                    Write-Log -Level "WARNING" -Message "advancedAuditing.ps1 not found"
-                }
+                Enable-AdvancedAuditing
+                # Also set separately so logging is on even if auditing fails partway.
                 try {
                     Set-NetFirewallProfile -Name Domain,Public,Private -LogAllowed True -LogBlocked True
                     Write-Host "Firewall logging enabled (allowed + blocked)" -ForegroundColor Green
@@ -182,6 +177,11 @@
                 Write-Host "Invalid selection: '$Choice'" -ForegroundColor Yellow
             }
         }
+    }
+
+    # Every option changes system settings; check before showing anything.
+    if (-not (Test-IsAdministrator)) {
+        throw "Invoke-HardeningMenu must be run as Administrator (start PowerShell with 'Run as administrator')."
     }
 
     if ($Force) {
