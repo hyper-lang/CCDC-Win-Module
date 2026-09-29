@@ -242,7 +242,7 @@
             Write-Host "    [OK] User/group state restored (local)" -ForegroundColor Green
         } else {
             # DC: log AD objects that cannot be automatically removed
-            $manualResetItems += "AD user 'ccdcuser3' - remove via Remove-ADUser if needed"
+            $manualResetItems += "AD users 'ccdcuser2', 'ccdcuser3' - remove via Remove-ADUser if needed"
             $manualResetItems += "Prior user passwords - reset manually if needed"
             $restoredCategories += "UsersGroups"
             Write-Host "    [INFO] DC detected - AD object cleanup logged to MANUAL-RESET-REQUIRED.txt" -ForegroundColor Yellow

@@ -103,11 +103,18 @@ function Initialize-CompetitionUsers {
             }
         }
 
+        # Skip a user whose creation failed: Set-UserPassword retries by prompting, which
+        # never succeeds for a missing account, and Enable-ADAccount throws on one.
         Write-Host "`nSetting passwords for CCDC domain users..."
-        Set-UserPassword -Username "ccdcuser2" -PasswordPrompt "Enter password for ccdcuser2: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-        Enable-ADAccount -Identity "ccdcuser2"
-        Set-UserPassword -Username "ccdcuser3" -PasswordPrompt "Enter password for ccdcuser3: " -AddToAdmins -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-        Enable-ADAccount -Identity "ccdcuser3"
+        foreach ($u in @("ccdcuser2", "ccdcuser3")) {
+            if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
+                Write-Host "Domain user '$u' not found; skipping. Create it with 'New-ADUser' and rerun." -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Domain user '$u' not found after creation; password and enable skipped"
+                continue
+            }
+            Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser3") -WordlistData $WordlistData -SaltPhrase $SaltPhrase
+            Enable-ADAccount -Identity $u
+        }
     } else {
         # Local path: change Administrator password + create ccdcuser1/2
         Write-Host "Changing Administrator password..." -ForegroundColor Green
