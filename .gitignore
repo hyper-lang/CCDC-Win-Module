@@ -1,0 +1,22 @@
+# Lab / test-harness files that hold credentials or host details
+targets*.ps1
+*.cache
+access/
+*_ed25519
+*.pem
+*.key
+
+# Generated at runtime
+*.log
+users_zulu.csv
+pcr.csv
+hard.txt
+fwback.wfw
+
+# Tooling
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

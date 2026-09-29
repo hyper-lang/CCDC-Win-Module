@@ -1,0 +1,131 @@
+﻿#Requires -Version 5.1
+
+# OSInfo.ps1 - Operating system detection.
+
+function Get-OperatingSystemInfo {
+    [CmdletBinding()]
+    param()
+
+    if ($script:HardeningContext.OS) {
+        return $script:HardeningContext.OS
+    }
+
+    try {
+        Write-Verbose "Detecting operating system..."
+
+        # -ErrorAction Stop so a failed query reaches the catch. If both fail, keep going:
+        # the OS reports as "Unknown" but DC detection (NTDS service) does not need WMI.
+        try {
+            $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        } catch {
+            Write-Warning "CIM query failed, falling back to WMI..."
+            try {
+                $osInfo = Get-WmiObject -Class Win32_OperatingSystem -ErrorAction Stop
+            } catch {
+                Write-Warning "WMI query failed; OS will be reported as Unknown: $($_.Exception.Message)"
+                $osInfo = $null
+            }
+        }
+
+        $caption = $osInfo.Caption
+        $version = $osInfo.Version
+        $buildNumber = $osInfo.BuildNumber
+        $productType = $osInfo.ProductType
+        $isDomainController = Test-IsDomainController
+
+        $edition = $osInfo.OperatingSystemSKU
+        $editionName = switch ($edition) {
+            { $_ -in 4, 27, 28 } { "Server Core" }
+            { $_ -in 7, 8, 10, 161, 162 } { "Server" }
+            default { "Client" }
+        }
+
+        $isServerCore = $false
+        if ($productType -in 2, 3) {
+            try {
+                $serverFeatures = Get-WindowsFeature
+                if ($serverFeatures) {
+                    $guiFeature = $serverFeatures | Where-Object { $_.Name -eq "Server-Gui-Mgmt-Infra" -or $_.Name -eq "Server-Gui-Shell" }
+                    $isServerCore = ($guiFeature -and $guiFeature.InstallState -ne "Installed")
+                }
+            } catch {
+                $isServerCore = ($caption -match "Server Core" -or $editionName -eq "Server Core")
+            }
+        }
+
+        $osVersion = "Unknown"
+        $osFamily = "Unknown"
+
+        if ($caption -match "Windows Server 2025") {
+            $osVersion = "Windows Server 2025"
+            $osFamily = "Server2025"
+        } elseif ($caption -match "Windows Server 2022") {
+            $osVersion = "Windows Server 2022"
+            $osFamily = "Server2022"
+        } elseif ($caption -match "Windows Server 2019") {
+            $osVersion = "Windows Server 2019"
+            $osFamily = "Server2019"
+        } elseif ($caption -match "Windows Server 2016") {
+            $osVersion = "Windows Server 2016"
+            $osFamily = "Server2016"
+        } elseif ($caption -match "Windows 11") {
+            $osVersion = "Windows 11"
+            $osFamily = "Client11"
+        } elseif ($caption -match "Windows 10") {
+            $osVersion = "Windows 10"
+            $osFamily = "Client10"
+        } elseif ($caption -match "Windows 7") {
+            $osVersion = "Windows 7"
+            $osFamily = "Client7"
+        } elseif ($caption -match "Windows Server 2012 R2") {
+            $osVersion = "Windows Server 2012 R2"
+            $osFamily = "Server2012R2"
+        } elseif ($caption -match "Windows Server 2012") {
+            $osVersion = "Windows Server 2012"
+            $osFamily = "Server2012"
+        } elseif ($caption -match "Windows Server 2008 R2") {
+            $osVersion = "Windows Server 2008 R2"
+            $osFamily = "Server2008R2"
+        } elseif ($caption -match "Windows Server 2008") {
+            $osVersion = "Windows Server 2008"
+            $osFamily = "Server2008"
+        } elseif ($caption -match "Windows 8") {
+            $osVersion = "Windows 8"
+            $osFamily = "Client8"
+        } elseif ($caption -match "Windows Vista") {
+            $osVersion = "Windows Vista"
+            $osFamily = "ClientVista"
+        } elseif ($caption -match "Windows XP") {
+            $osVersion = "Windows XP"
+            $osFamily = "ClientXP"
+        }
+
+        $result = [PSCustomObject]@{
+            Caption      = $caption
+            Version      = $version
+            BuildNumber  = $buildNumber
+            OSVersion    = $osVersion
+            OSFamily     = $osFamily
+            Edition      = $editionName
+            IsServer     = ($productType -in 2, 3)
+            IsServerCore = $isServerCore
+            ProductType  = $productType
+            IsDomainController = $isDomainController
+        }
+
+        Write-Host "`n[INFO] OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)" -ForegroundColor Cyan
+        Write-Log -Level "INFO" -Message "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)"
+        if ($isDomainController) {
+            Write-Log -Level "INFO" -Message "Domain Controller detected - AD operations enabled"
+        } else {
+            Write-Log -Level "INFO" -Message "Non-domain machine detected - local operations only"
+        }
+
+        $script:HardeningContext.OS = $result
+        return $result
+
+    } catch {
+        Write-Error "Failed to detect operating system: $($_.Exception.Message)"
+        throw
+    }
+}

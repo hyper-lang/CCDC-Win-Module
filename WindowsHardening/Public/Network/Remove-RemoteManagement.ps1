@@ -1,0 +1,264 @@
+﻿function Remove-RemoteManagement {
+    <#
+    .SYNOPSIS
+        Disables remote management attack surface: WinRM, Remote Registry, RDP, and optional SSH.
+
+    .DESCRIPTION
+        Hardens the system by tearing down every common remote-management channel that
+        attackers leverage for lateral movement and C2:
+
+          1. WinRM             - Runs Disable-PSRemoting, removes all HTTP/HTTPS listeners,
+                                 stops and disables the WinRM service, and removes WinRM
+                                 firewall rules (5985/5986).
+          2. Remote Registry   - Stops and disables the RemoteRegistry service so attackers
+                                 cannot read or write registry hives over the network.
+          3. RDP               - Sets fDenyTSConnections=1 (disables RDP completely),
+                                 enforces NLA (UserAuthentication=1), and removes the
+                                 Remote Desktop firewall rule group.
+          4. SSH (optional)    - If the OpenSSH Server service (sshd) is present, stops
+                                 and disables it and removes the OpenSSH firewall rule.
+          5. Telnet client     - Removes the Telnet-Client Windows feature if installed.
+
+        All operations are wrapped in try/catch so a single failure does not abort
+        the rest.  This function is safe to run on domain controllers and member
+        servers; it does NOT touch AD or LDAP ports.
+
+        Run AFTER Set-FirewallConfiguration, which blocks ports at the perimeter.
+        This function kills the services so they cannot be re-exposed if firewall
+        rules are tampered with.
+
+    .PARAMETER SkipRDP
+        Skip the RDP-disable step.  Use when RDP access must be preserved (e.g.
+        for a jump-box role in competition).
+
+    .PARAMETER SkipSSH
+        Skip the SSH-disable step even if sshd is detected.
+
+    .PARAMETER SkipWinRM
+        Skip the WinRM-disable step.  Useful when running this function from a
+        WinRM session you still need (run it last, or handle the disconnect).
+
+    .EXAMPLE
+        Remove-RemoteManagement
+        # Disables WinRM, Remote Registry, RDP, and SSH (if present).
+
+    .EXAMPLE
+        Remove-RemoteManagement -SkipRDP
+        # Disables everything except RDP (keeps remote desktop available).
+
+    .EXAMPLE
+        Remove-RemoteManagement -SkipWinRM
+        # Disables RDP, Remote Registry, and SSH but leaves WinRM running.
+        # Useful when hardening over a WinRM session.
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$SkipRDP,
+        [switch]$SkipSSH,
+        [switch]$SkipWinRM
+    )
+
+    Invoke-HardeningOperation -OperationName "Remove Remote Management" -ScriptBlock {
+
+        # -- 1. WinRM ---------------------------------------------------------
+        if (-not $SkipWinRM) {
+            Write-Host "`n  [WinRM] Disabling Windows Remote Management..." -ForegroundColor Cyan
+
+            try {
+                # Suppress the progress bar that Disable-PSRemoting writes
+                $oldPref = $ProgressPreference
+                $ProgressPreference = 'SilentlyContinue'
+                Disable-PSRemoting -Force -ErrorAction SilentlyContinue
+                $ProgressPreference = $oldPref
+                Write-Host "  [WinRM] PS remoting disabled" -ForegroundColor Green
+                Write-Log -Level "SUCCESS" -Message "Disabled PS remoting"
+            } catch {
+                Write-Host "  [WinRM] WARNING: Disable-PSRemoting: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Disable-PSRemoting failed: $($_.Exception.Message)"
+            }
+
+            # Remove all WinRM listeners
+            try {
+                $listeners = Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue
+                if ($listeners) {
+                    $listeners | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [WinRM] Removed all WinRM listeners" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "Removed all WinRM listeners"
+                } else {
+                    Write-Host "  [WinRM] No WinRM listeners found" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "  [WinRM] WARNING: Could not remove listeners: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not remove WinRM listeners: $($_.Exception.Message)"
+            }
+
+            # Stop and disable WinRM service
+            try {
+                $svc = Get-Service -Name WinRM -ErrorAction Ignore
+                if ($svc) {
+                    Stop-Service -Name WinRM -Force -ErrorAction SilentlyContinue
+                    Set-Service  -Name WinRM -StartupType Disabled -ErrorAction Stop
+                    Write-Host "  [WinRM] Service stopped and disabled" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "WinRM service stopped and disabled"
+                }
+            } catch {
+                Write-Host "  [WinRM] WARNING: Could not stop/disable WinRM service: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not stop/disable WinRM service: $($_.Exception.Message)"
+            }
+
+            # Remove WinRM firewall rules (5985 HTTP, 5986 HTTPS)
+            try {
+                $winrmRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -match 'WinRM|Windows Remote Management' }
+                if ($winrmRules) {
+                    $winrmRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                    Write-Host "  [WinRM] Firewall rules removed ($($winrmRules.Count) rule(s))" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "Removed $($winrmRules.Count) WinRM firewall rule(s)"
+                } else {
+                    Write-Host "  [WinRM] No WinRM firewall rules found" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "  [WinRM] WARNING: Could not remove firewall rules: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not remove WinRM firewall rules: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "  [WinRM] SKIPPED (SkipWinRM specified)" -ForegroundColor Yellow
+            Write-Log -Level "INFO" -Message "WinRM disable step skipped per -SkipWinRM"
+        }
+
+        # -- 2. Remote Registry -----------------------------------------------
+        Write-Host "`n  [RemoteRegistry] Disabling Remote Registry service..." -ForegroundColor Cyan
+        try {
+            $svc = Get-Service -Name RemoteRegistry -ErrorAction Ignore
+            if ($svc) {
+                Stop-Service -Name RemoteRegistry -Force -ErrorAction SilentlyContinue
+                Set-Service  -Name RemoteRegistry -StartupType Disabled -ErrorAction Stop
+                Write-Host "  [RemoteRegistry] Service stopped and disabled" -ForegroundColor Green
+                Write-Log -Level "SUCCESS" -Message "Remote Registry service stopped and disabled"
+            } else {
+                Write-Host "  [RemoteRegistry] Service not found (may already be absent)" -ForegroundColor Yellow
+                Write-Log -Level "INFO" -Message "RemoteRegistry service not found"
+            }
+        } catch {
+            Write-Host "  [RemoteRegistry] WARNING: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Log -Level "WARNING" -Message "Could not disable RemoteRegistry: $($_.Exception.Message)"
+        }
+
+        # -- 3. RDP -----------------------------------------------------------
+        if (-not $SkipRDP) {
+            Write-Host "`n  [RDP] Disabling Remote Desktop..." -ForegroundColor Cyan
+
+            # Disable RDP via registry
+            try {
+                $rdpKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+                Set-ItemProperty -Path $rdpKey -Name fDenyTSConnections -Value 1 -Type DWord -Force -ErrorAction Stop
+                Write-Host "  [RDP] fDenyTSConnections set to 1 (RDP disabled)" -ForegroundColor Green
+                Write-Log -Level "SUCCESS" -Message "RDP disabled via registry (fDenyTSConnections=1)"
+            } catch {
+                Write-Host "  [RDP] WARNING: Could not set fDenyTSConnections: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not disable RDP via registry: $($_.Exception.Message)"
+            }
+
+            # Enforce NLA (Network Level Authentication) even if RDP is somehow re-enabled
+            try {
+                $nlaKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+                Set-ItemProperty -Path $nlaKey -Name UserAuthentication -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Write-Host "  [RDP] NLA enforced (UserAuthentication=1)" -ForegroundColor Green
+                Write-Log -Level "SUCCESS" -Message "NLA enforced on RDP-Tcp listener"
+            } catch {
+                Write-Host "  [RDP] WARNING: Could not enforce NLA: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not enforce NLA: $($_.Exception.Message)"
+            }
+
+            # Remove RDP firewall rules
+            try {
+                $rdpRules = Get-NetFirewallRule -Group '@FirewallAPI.dll,-28752' -ErrorAction Ignore
+                if (-not $rdpRules) {
+                    # Fallback: match by display name
+                    $rdpRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                        Where-Object { $_.DisplayName -match 'Remote Desktop' }
+                }
+                if ($rdpRules) {
+                    $rdpRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                    Write-Host "  [RDP] Firewall rules removed ($($rdpRules.Count) rule(s))" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "Removed $($rdpRules.Count) RDP firewall rule(s)"
+                } else {
+                    Write-Host "  [RDP] No RDP firewall rules found" -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host "  [RDP] WARNING: Could not remove RDP firewall rules: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not remove RDP firewall rules: $($_.Exception.Message)"
+            }
+
+            # Stop TermService (Remote Desktop Services)
+            try {
+                $svc = Get-Service -Name TermService -ErrorAction Ignore
+                if ($svc -and $svc.Status -eq 'Running') {
+                    Stop-Service -Name TermService -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [RDP] TermService stopped" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "TermService stopped"
+                }
+                # Note: TermService StartupType is left as-is (Manual) because changing
+                # it to Disabled can break RDS licensing and other Windows subsystems.
+            } catch {
+                Write-Host "  [RDP] WARNING: Could not stop TermService: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not stop TermService: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "  [RDP] SKIPPED (SkipRDP specified)" -ForegroundColor Yellow
+            Write-Log -Level "INFO" -Message "RDP disable step skipped per -SkipRDP"
+        }
+
+        # -- 4. SSH (OpenSSH Server) -----------------------------------------
+        if (-not $SkipSSH) {
+            Write-Host "`n  [SSH] Checking for OpenSSH Server..." -ForegroundColor Cyan
+            try {
+                $svc = Get-Service -Name sshd -ErrorAction Ignore
+                if ($svc) {
+                    Stop-Service -Name sshd -Force -ErrorAction SilentlyContinue
+                    Set-Service  -Name sshd -StartupType Disabled -ErrorAction Stop
+                    Write-Host "  [SSH] OpenSSH Server stopped and disabled" -ForegroundColor Green
+                    Write-Log -Level "SUCCESS" -Message "sshd service stopped and disabled"
+
+                    # Remove SSH firewall rule
+                    $sshRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                        Where-Object { $_.DisplayName -match 'SSH|OpenSSH' }
+                    if ($sshRules) {
+                        $sshRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                        Write-Host "  [SSH] Firewall rules removed ($($sshRules.Count) rule(s))" -ForegroundColor Green
+                        Write-Log -Level "SUCCESS" -Message "Removed $($sshRules.Count) SSH firewall rule(s)"
+                    }
+                } else {
+                    Write-Host "  [SSH] OpenSSH Server not installed - skipping" -ForegroundColor Yellow
+                    Write-Log -Level "INFO" -Message "sshd service not found - SSH skip"
+                }
+            } catch {
+                Write-Host "  [SSH] WARNING: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Log -Level "WARNING" -Message "Could not disable sshd: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "  [SSH] SKIPPED (SkipSSH specified)" -ForegroundColor Yellow
+            Write-Log -Level "INFO" -Message "SSH disable step skipped per -SkipSSH"
+        }
+
+        # -- 5. Telnet Client ------------------------------------------------
+        Write-Host "`n  [Telnet] Removing Telnet Client feature..." -ForegroundColor Cyan
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName TelnetClient -ErrorAction SilentlyContinue
+            if ($feature -and $feature.State -eq 'Enabled') {
+                Disable-WindowsOptionalFeature -Online -FeatureName TelnetClient -NoRestart -ErrorAction Stop | Out-Null
+                Write-Host "  [Telnet] Telnet Client removed" -ForegroundColor Green
+                Write-Log -Level "SUCCESS" -Message "Telnet Client feature removed"
+            } else {
+                Write-Host "  [Telnet] Telnet Client not installed - skipping" -ForegroundColor Yellow
+                Write-Log -Level "INFO" -Message "Telnet Client not installed"
+            }
+        } catch {
+            Write-Host "  [Telnet] WARNING: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Log -Level "WARNING" -Message "Could not remove Telnet Client: $($_.Exception.Message)"
+        }
+
+        Write-Host "`nRemote Management attack surface reduced." -ForegroundColor Green
+        Write-Log -Level "SUCCESS" -Message "Remove-RemoteManagement completed"
+    }
+}
