@@ -21,5 +21,3 @@ function Protect-Mimikatz {
         Write-Log -Level "SUCCESS" -Message "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
     }
 }
-
-Set-Alias -Name Patch-Mimikatz -Value Protect-Mimikatz

@@ -56,5 +56,3 @@ function New-Password {
     }
     $password + "1"
 }
-
-Set-Alias -Name Print-Users -Value Show-Users

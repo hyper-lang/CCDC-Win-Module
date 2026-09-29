@@ -107,5 +107,3 @@
     Write-Host "`n[Users] Done." -ForegroundColor Green
     Write-Log -Level "INFO" -Message "Invoke-UserHardening completed"
 }
-
-Set-Alias -Name Harden-Users -Value Invoke-UserHardening

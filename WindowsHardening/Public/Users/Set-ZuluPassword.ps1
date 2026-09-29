@@ -42,7 +42,7 @@ function Set-ZuluPassword {
             Write-Host "`nOptions:" -ForegroundColor Yellow
             @(
                 "  -Help, -h          Show this help message",
-                "  -Initial, -i       Perform initial setup (change Administrator password and create ccdcuser1/2)",
+                "  -Initial, -i       Perform initial setup (change Administrator password and create ccdcuser1/2, or ccdcuser2/3 on a DC)",
                 "  -User              Change password for a single user",
                 "  -UsersFile, -U     Change passwords for newline-separated users in a file (-u also means this)",
                 "  -GenerateOnly, -g  Generate/print passwords only, do not change them (not with -Initial)",
@@ -192,6 +192,3 @@ function Write-ZuluLog {
         Add-Content -Path $LogFile -Value $Message
     }
 }
-
-Set-Alias -Name New-Zulu-Integration -Value Set-ZuluPassword
-Set-Alias -Name New-ZuluIntegration -Value Set-ZuluPassword

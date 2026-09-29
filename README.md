@@ -100,14 +100,6 @@ missing. Output goes to the log directory (`-LogPath`, default
 and Zulu's `zulu.log` / `users_zulu.csv`. Errors from a `Invoke-WindowsHardening`
 run are also appended to `Desktop\hard.txt`.
 
-Aliases: `Configure-Firewall` → `Set-FirewallConfiguration`, `Patch-Mimikatz` →
-`Protect-Mimikatz`, `Upgrade-SMB` → `Update-SMB`. Previous function names still
-work as aliases: `New-Zulu-Integration`/`New-ZuluIntegration` → `Set-ZuluPassword`,
-`Harden-Users`/`-Network`/`-Services` → `Invoke-UserHardening`/`Invoke-NetworkHardening`/
-`Invoke-ServiceHardening`, `Disable-UnnecessaryServices` → `Disable-UnusedNetworkProtocols`,
-`Revert-WindowsState` → `Restore-WindowsState`, `Print-Users` → `Show-Users`,
-`Print-Log` → `Show-OperationSummary`.
-
 OS and AD status (version, domain controller or not, domain membership) is
 detected once, when the module is imported, and every function reads that cached
 result. The rest of setup (`Initialize-System`: log file, data-file check) runs
@@ -189,7 +181,7 @@ $backup = Backup-WindowsState -BackupPath "D:\backups\machine1"
 ### `Disable-UnusedNetworkProtocols`
 
 Disables IPv6 on active adapters and NetBIOS over TCP/IP on IP-enabled
-adapters. No prompts. (Formerly `Disable-UnnecessaryServices`.)
+adapters. No prompts.
 
 ```powershell
 # Same in both modes (no parameters exist)
@@ -280,22 +272,21 @@ other machine gets Deny All Inbound only. WinRM is disabled (by
 execution policy is set to Restricted machine-wide, so new sessions need
 `-ExecutionPolicy Bypass` to load the module afterwards.
 
-### `Protect-Mimikatz` (alias `Patch-Mimikatz`)
+### `Protect-Mimikatz`
 
 Disables WDigest credential storage (`UseLogonCredential = 0`) to block
 Mimikatz plaintext extraction. No prompts. A restart is recommended afterward.
 
 ```powershell
 Protect-Mimikatz
-# or the alias
-Patch-Mimikatz
 ```
 
 ### `Remove-AdminUsers`
 
 Removes users from the administrative groups (`Domain Admins`, `Enterprise
 Admins`, `Administrators` on a DC; `Administrators` on a local machine),
-preserving the specified exclusions. No prompts.
+preserving `Administrator` plus `ccdcuser3` on a DC or `ccdcuser1` on a local
+machine. No prompts.
 
 ```powershell
 Remove-AdminUsers
@@ -323,7 +314,7 @@ passwords, AD objects) are logged to `MANUAL-RESET-REQUIRED.txt`.
 Restore-WindowsState -BackupPath "C:\Windows\System32\wbem\.hb\2026-08-26_120000"
 ```
 
-### `Set-FirewallConfiguration` (alias `Configure-Firewall`)
+### `Set-FirewallConfiguration`
 
 Consolidated firewall configuration. It always creates a high-priority
 `Deny All Inbound` rule, then allows specified ports. Domain-vs-local branching
@@ -343,11 +334,18 @@ Set-FirewallConfiguration -FirewallPorts 80,443 -PreserveManagementPort
 > `-NonInteractive` (never prompt; AD ports on a DC, Deny All only otherwise)
 > is what `Invoke-WindowsHardening` uses.
 
-### `Set-ZuluPassword` (formerly `New-Zulu-Integration`)
+### `Set-ZuluPassword`
 
 Generates/rotates Zulu passwords. `-Initial` creates the competition users and
 resets the Administrator password (menu option 6). Without prompts it uses the
 provided file/seed/user parameters.
+
+Competition users created by `-Initial`:
+
+| Machine | Admin account | Standard account |
+|---|---|---|
+| Domain controller | `ccdcuser3` (AD, Domain Admins) | `ccdcuser2` (AD) |
+| Local machine | `ccdcuser1` (local Administrators) | `ccdcuser2` (local) |
 
 ```powershell
 # Interactive (prompts for users, seed, etc.)
@@ -368,15 +366,13 @@ Parameter notes: `-SaltPhrase` (aliases `-s`, `-Seed`) sets the salt phrase;
 pass it here. `-U`/`-u` both mean `-UsersFile` (PowerShell aliases
 ignore case); spell out `-User` for a single user.
 
-### `Update-SMB` (alias `Upgrade-SMB`)
+### `Update-SMB`
 
 Enables SMBv2/v3 and disables SMBv1 (where supported by the edition). No
 prompts.
 
 ```powershell
 Update-SMB
-# or the alias
-Upgrade-SMB
 ```
 
 ---

@@ -243,5 +243,3 @@ function Set-FirewallConfiguration {
         }
     }
 }
-
-Set-Alias -Name Configure-Firewall -Value Set-FirewallConfiguration

@@ -34,5 +34,3 @@ function Disable-UnusedNetworkProtocols {
         Write-Host "Unused network protocols disabled (IPv6, NetBIOS)" -ForegroundColor Green
     }
 }
-
-Set-Alias -Name Disable-UnnecessaryServices -Value Disable-UnusedNetworkProtocols

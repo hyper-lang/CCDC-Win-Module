@@ -95,5 +95,3 @@ function Update-SMB {
         }
     }
 }
-
-Set-Alias -Name Upgrade-SMB -Value Update-SMB -Option ReadOnly -Scope Script

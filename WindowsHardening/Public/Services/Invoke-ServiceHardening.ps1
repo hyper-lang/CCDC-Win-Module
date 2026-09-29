@@ -62,5 +62,3 @@
     Write-Host "`n[Services] Done." -ForegroundColor Green
     Write-Log -Level "INFO" -Message "Invoke-ServiceHardening completed"
 }
-
-Set-Alias -Name Harden-Services -Value Invoke-ServiceHardening

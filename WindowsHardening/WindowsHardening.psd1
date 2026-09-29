@@ -77,22 +77,7 @@
         'Restore-RegistrySecurityValues'
     )
 
-    AliasesToExport = @(
-        'Configure-Firewall'
-        'Patch-Mimikatz'
-        'Upgrade-SMB'
-
-        # Previous function names
-        'New-Zulu-Integration'
-        'New-ZuluIntegration'
-        'Harden-Users'
-        'Harden-Network'
-        'Harden-Services'
-        'Disable-UnnecessaryServices'
-        'Revert-WindowsState'
-        'Print-Users'
-        'Print-Log'
-    )
+    AliasesToExport = @()
 
     PrivateData = @{
         PSData = @{

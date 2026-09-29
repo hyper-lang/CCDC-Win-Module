@@ -189,5 +189,3 @@ function Show-OperationSummary {
 
     Write-Host ("`n" + ("=" * 60)) -ForegroundColor Cyan
 }
-
-Set-Alias -Name Print-Log -Value Show-OperationSummary

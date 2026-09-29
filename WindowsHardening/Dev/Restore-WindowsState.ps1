@@ -463,5 +463,3 @@ Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
         IsDomainController = $isDC
     }
 }
-
-Set-Alias -Name Revert-WindowsState -Value Restore-WindowsState

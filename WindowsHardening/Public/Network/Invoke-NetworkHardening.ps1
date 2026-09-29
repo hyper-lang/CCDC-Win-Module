@@ -99,5 +99,3 @@
     Write-Host "`n[Network] Done." -ForegroundColor Green
     Write-Log -Level "INFO" -Message "Invoke-NetworkHardening completed"
 }
-
-Set-Alias -Name Harden-Network -Value Invoke-NetworkHardening
