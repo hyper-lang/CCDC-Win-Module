@@ -49,7 +49,7 @@ function Set-FirewallAllowRule {
     )
 
     $displayName = "Allow $Protocol $Port"
-    $existing = @(Get-NetFirewallRule -DisplayName $displayName -ErrorAction SilentlyContinue)
+    $existing = @(Get-NetFirewallRule -DisplayName $displayName -ErrorAction Ignore)
 
     if ($existing.Count -gt 0) {
         $existing[0] | Set-NetFirewallRule -Direction Inbound -Action Allow -Protocol $Protocol -LocalPort $Port -Enabled True
@@ -64,7 +64,7 @@ function Set-FirewallAllowRule {
     }
 
     $blocking = @(
-        Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue |
+        Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction Ignore |
             Where-Object {
                 $filter = $_ | Get-NetFirewallPortFilter
                 $protocolMatches = $filter.Protocol -eq 'Any' -or $filter.Protocol -eq $Protocol
