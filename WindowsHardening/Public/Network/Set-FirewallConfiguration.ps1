@@ -14,6 +14,9 @@
 
     -AdditionalPorts are added on top of whichever set was chosen.
 
+    -Prompt picks the base set the same way -NonInteractive does (-FirewallPorts, else the
+    AD ports on a DC), then asks for extra ports to allow on top of it.
+
     Existing "Allow <Protocol> <Port>" rules from earlier runs are re-enabled instead of
     duplicated, and enabled Block rules that would override an Allow rule are reported.
     To open a port later without resetting the firewall, use Add-FirewallPort.
@@ -28,7 +31,12 @@
     the prompt - e.g. a database or web port the box is known to need.
 
 .PARAMETER NonInteractive
-    Never prompt (used by Invoke-WindowsHardening).
+    Never prompt (used by Invoke-WindowsHardening), unless -Prompt is also given.
+
+.PARAMETER Prompt
+    Keep the default ports (or -FirewallPorts), then ask which extra ports to allow. The
+    suggested scored/AD ports not already allowed are listed; unlisted ports can be typed;
+    Enter adds none.
 
 .PARAMETER PreserveManagementPort
     When set, creates Allow rules for TCP 5986 (WinRM-HTTPS) and TCP 5985
@@ -45,6 +53,8 @@ function Set-FirewallConfiguration {
 
         [switch]$NonInteractive,
 
+        [switch]$Prompt,
+
         [switch]$PreserveManagementPort
     )
 
@@ -54,9 +64,7 @@ function Set-FirewallConfiguration {
             $isDC = $script:HardeningContext.OS.IsDomainController
 
             if ($isDC) {
-                $usualPorts = @(53, 3389, 80, 445, 139, 22, 88, 67, 68, 135, 139, 389, 636, 3268, 3269, 464) | Sort-Object
-                $commonScored = @(53, 3389, 80, 22)
-                $commonADorDC = @(53, 139, 88, 67, 68, 135, 139, 389, 445, 636, 3268, 3269, 464)
+                $commonADorDC = @(53, 139, 88, 67, 68, 135, 389, 445, 636, 3268, 3269, 464)
             }
 
             # Explicit ports: use exactly these
@@ -66,7 +74,7 @@ function Set-FirewallConfiguration {
                 Write-Log -Level "INFO" -Message "Using firewall ports from parameter: $($portsToAllow -join ', ')"
             }
             # Non-interactive without ports: AD ports on a DC, Deny All only on a local machine
-            elseif ($NonInteractive) {
+            elseif ($NonInteractive -or $Prompt) {
                 if ($isDC) {
                     $portsToAllow = $commonADorDC
                     Write-Host "  [INFO] Using common AD ports: $($portsToAllow -join ', ')" -ForegroundColor Yellow
@@ -110,11 +118,25 @@ function Set-FirewallConfiguration {
                 }
             }
 
+            # -Prompt: keep the base set, then ask for extra ports on top of it.
+            $promptedPorts = @()
+            if ($Prompt) {
+                $alreadyAllowed = @(@($portsToAllow) + @($AdditionalPorts) | Where-Object { "$_" -ne '' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
+                if ($alreadyAllowed.Count -gt 0) {
+                    Write-Host "  [INFO] Already allowed: $($alreadyAllowed -join ', ')" -ForegroundColor Yellow
+                }
+                $extraOptions = @(Get-FirewallPortOptions | Where-Object { $alreadyAllowed -notcontains $_.Value })
+                $promptedPorts = Read-Choice -Title "Additional Firewall Ports" -Prompt "Extra ports to allow" -Options $extraOptions `
+                    -Multiple -AllowCustom -AllowEmpty `
+                    -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
+            }
+
             # Add-on ports; also validates, de-duplicates, and drops blank prompt entries
-            $portsToAllow = @((ConvertTo-PortList -Ports (@($portsToAllow) + @($AdditionalPorts) | ForEach-Object { "$_" })) | Sort-Object -Unique)
-            if ($AdditionalPorts.Count -gt 0) {
-                Write-Host "  [INFO] Additional ports: $($AdditionalPorts -join ', ')" -ForegroundColor Yellow
-                Write-Log -Level "INFO" -Message "Additional firewall ports: $($AdditionalPorts -join ', ')"
+            $extraPorts = @(@($AdditionalPorts) + @($promptedPorts) | Where-Object { $null -ne $_ })
+            $portsToAllow = @((ConvertTo-PortList -Ports (@($portsToAllow) + $extraPorts | ForEach-Object { "$_" })) | Sort-Object -Unique)
+            if ($extraPorts.Count -gt 0) {
+                Write-Host "  [INFO] Additional ports: $($extraPorts -join ', ')" -ForegroundColor Yellow
+                Write-Log -Level "INFO" -Message "Additional firewall ports: $($extraPorts -join ', ')"
             }
 
             # Backup current firewall config

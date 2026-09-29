@@ -333,6 +333,9 @@ Set-FirewallConfiguration -FirewallPorts 80,443 -PreserveManagementPort
 
 # Keep the defaults (AD ports on a DC) and add a database + web port on top
 Set-FirewallConfiguration -NonInteractive -AdditionalPorts 1433,8080
+
+# Keep the defaults, then pick extra ports from a list (or type any port)
+Set-FirewallConfiguration -Prompt
 ```
 
 Re-running does not duplicate rules: an existing `Allow <Protocol> <Port>` rule is
@@ -417,6 +420,7 @@ Commonly used parameters and their short aliases:
 | `-SkipRDP` / `-srdp` | switch | `$false` | Skip the RDP group reset and leave RDP enabled |
 | `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
 | `-AdditionalPorts` / `-ap` | string[] | — | Extra ports allowed on top of `-FirewallPorts` or the defaults |
+| `-Prompt` | switch | `$false` | At the firewall step, keep the default ports and ask for extra ports |
 | `-SaltPhrase` / `-s` | string | — | Salt phrase for Zulu passwords (else Zulu prompts) |
 | `-LogPath` | string | `C:\Windows\Logs\Hardening` | Log output directory |
 | `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled) |
@@ -467,6 +471,7 @@ Commonly used parameters and their short aliases:
 |---|---|---|
 | `-FirewallPorts` | int[] | Ports to allow |
 | `-AdditionalPorts` | int[] | Extra ports allowed on top of whichever set was chosen |
+| `-Prompt` | switch | Keep the defaults (or `-FirewallPorts`), then ask for extra ports; works with `-NonInteractive` |
 | `-NonInteractive` | switch | Never prompt (used by `Invoke-WindowsHardening`) |
 | `-PreserveManagementPort` | switch | Keep Allow rules for WinRM (TCP 5985/5986) |
 

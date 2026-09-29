@@ -29,6 +29,9 @@
     .PARAMETER AdditionalPorts
         Extra ports to allow on top of -FirewallPorts or the defaults above - e.g. a database
         or web port the box needs. Same formats as -FirewallPorts. Alias: -ap.
+    .PARAMETER Prompt
+        At the firewall step, keep the default ports (or -FirewallPorts / -AdditionalPorts)
+        and then ask for extra ports to allow on top of them.
     .PARAMETER SaltPhrase
         Salt phrase for Zulu password generation. If omitted, Zulu prompts for it. Alias: -s.
     .PARAMETER LogPath
@@ -58,6 +61,8 @@
 
         [Alias("ap")]
         [string[]]$AdditionalPorts,
+
+        [switch]$Prompt,
 
         [Alias("s")]
         [string]$SaltPhrase,
@@ -147,7 +152,7 @@
     Invoke-ServiceHardening
 
     Write-Host "`nStep 3/5: Hardening network and remote access..." -ForegroundColor Cyan
-    Invoke-NetworkHardening -NonInteractive -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
+    Invoke-NetworkHardening -NonInteractive -Prompt:$Prompt -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
 
     Write-Host "`nStep 4/5: Configuring Splunk..." -ForegroundColor Cyan
     if ($SkipSplunk) {

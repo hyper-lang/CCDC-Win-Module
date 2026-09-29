@@ -31,6 +31,10 @@
     .PARAMETER FirewallPorts
         Ports to allow, passed to Set-FirewallConfiguration.
 
+    .PARAMETER Prompt
+        Passed to Set-FirewallConfiguration: keep the default ports, then ask for extra
+        ports to allow on top of them. Works with -NonInteractive.
+
     .PARAMETER AdditionalPorts
         Extra ports allowed on top of -FirewallPorts or the defaults, passed to
         Set-FirewallConfiguration.
@@ -62,6 +66,8 @@
 
         [switch]$NonInteractive,
 
+        [switch]$Prompt,
+
         [int[]]$FirewallPorts,
 
         [int[]]$AdditionalPorts,
@@ -76,7 +82,7 @@
 
     # Step 1: Firewall
     Write-Host "`n[Network 1/2] Configuring firewall..." -ForegroundColor Cyan
-    Set-FirewallConfiguration -NonInteractive:$NonInteractive -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
+    Set-FirewallConfiguration -NonInteractive:$NonInteractive -Prompt:$Prompt -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
 
     # Step 2: Remote management teardown
     if (-not $SkipRemoteManagement) {
