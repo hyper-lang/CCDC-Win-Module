@@ -346,7 +346,7 @@ that bypasses it.
 `Invoke-HardeningMenu` is data-driven:
 
 - **`$menuOptions`** lists every option: `Key`, `Label`, and `Section`, the letter of the
-  sub-menu it appears in (`U`, `N`, `S`, `L`). Options without a section (1, A, 0) are on
+  sub-menu it appears in (`U`, `N`, `S`, `L`, `P`). Options without a section (1, A, 0) are on
   the main screen. Within a section, options appear in list order, so each section's
   "run all" orchestrator comes first. Keys never change (19 is in the Network section),
   so typed numbers, `-Selection` and the README stay valid.

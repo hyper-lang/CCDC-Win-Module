@@ -3,7 +3,7 @@
     .SYNOPSIS
         Interactive menu for running individual hardening steps or sections.
     .DESCRIPTION
-        Loops until Q. The main screen lists the sections; a section letter (U, N, S, L)
+        Loops until Q. The main screen lists the sections; a section letter (U, N, S, L, P)
         opens that section's options. Every option keeps its number and can be typed from
         any screen: 1 runs the full sequence (Invoke-WindowsHardening, which starts a new
         log), 2-4 run one section, 5-19 run single steps. Several options can be given at
@@ -46,10 +46,10 @@
         @{ Key = '4';  Section = 'S'; Label = 'Harden Services    - run all service steps (Invoke-ServiceHardening)' }
         @{ Key = '13'; Section = 'S'; Label = 'Disable Unused Network Protocols (IPv6, NetBIOS)' }
         @{ Key = '14'; Section = 'S'; Label = 'Upgrade SMB (enable v2/3, disable v1, enforce signing)' }
+        @{ Key = '18'; Section = 'S'; Label = 'Set Execution Policy to Restricted' }
         @{ Key = '15'; Section = 'L'; Label = 'Enable Advanced Auditing + Firewall Logging' }
         @{ Key = '16'; Section = 'L'; Label = 'Configure Splunk' }
-        @{ Key = '17'; Section = 'L'; Label = 'Install EternalBlue Patch' }
-        @{ Key = '18'; Section = 'L'; Label = 'Set Execution Policy to Restricted' }
+        @{ Key = '17'; Section = 'P'; Label = 'Install EternalBlue Patch' }
         @{ Key = 'A';  Label = 'Re-run setup (new log file)' }
         @{ Key = '0';  Label = 'Print Execution Summary' }
     )
@@ -59,7 +59,8 @@
         U = 'Users & Credentials'
         N = 'Network & Remote Access'
         S = 'Services'
-        L = 'Logging & Patching'
+        L = 'Logging'
+        P = 'Patching'
     }
 
     # "2, 5-10" from the option keys in a section.

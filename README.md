@@ -257,8 +257,9 @@ numbers; a section letter opens that section's options:
 | — | Harden Everything (`Invoke-WindowsHardening`, new log file) | 1 |
 | `U` | Users & Credentials | 2 (run all), 5-10 |
 | `N` | Network & Remote Access | 3 (run all), 11, 12, 19 |
-| `S` | Services | 4 (run all), 13, 14 |
-| `L` | Logging & Patching | 15-18 |
+| `S` | Services | 4 (run all), 13, 14, 18 |
+| `L` | Logging | 15, 16 |
+| `P` | Patching | 17 |
 | — | Re-run setup / execution summary | A / 0 |
 
 Option numbers can be typed from any screen, several at once (`9,10,13` or
