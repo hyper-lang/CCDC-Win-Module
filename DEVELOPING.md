@@ -27,7 +27,7 @@ the module, see [README.md](README.md).
 
 ```
 CCDC-Win-Module/
-├── loader.ps1                 One-liner bootstrap: download the repo zip, import the module
+├── loader.ps1                 One-liner bootstrap: download this repo's zip, import the module
 ├── README.md                  User documentation
 ├── DEVELOPING.md              This file
 └── WindowsHardening/
@@ -72,15 +72,26 @@ A file may hold more than one function when they belong together. For example,
 
 `irm .../loader.ps1 | iex` does the following:
 
-1. Enables TLS 1.2, since Windows PowerShell 5.1 defaults to protocols GitHub rejects.
+1. Enables TLS 1.2, since Windows PowerShell 5.1 defaults to protocols GitHub rejects,
+   and turns off the progress bar, which slows 5.1 downloads badly.
 2. Sets the execution policy to `Bypass` for the Process scope only. The module is unsigned.
-3. Downloads `https://github.com/<Repo>/archive/<Ref>.zip`, extracts it to
-   `$env:TEMP\CCDC-Win-Module` (replacing any previous copy), and runs `Unblock-File`
-   on everything.
-4. Finds `WindowsHardening.psd1` and imports it with `-Global`.
+3. Downloads `https://github.com/<Repo>/archive/<Ref>.zip`, the archive of this
+   repository, which is small. `-Repo` defaults to `hyper-lang/CCDC-Win-Module`.
+4. Extracts it to a temporary folder. The archive holds one top folder named after the
+   repo and ref (e.g. `CCDC-Win-Module-main`). It moves only `-Path` (default
+   `WindowsHardening`) to `%TEMP%\CCDC-Win-Module`, which is replaced on every run, and
+   deletes the rest. On Windows, it runs `Unblock-File` on the module's files.
+5. Imports `WindowsHardening.psd1` with `-Global`.
 
-Nothing is installed. `-Ref` selects a branch, tag or commit, which makes it easy to
-test a branch on a VM.
+Nothing is installed, and no GitHub API is involved, so there is no rate limit. `-Ref`
+selects a branch, tag or commit, which makes it easy to test a branch on a VM, and to
+pin the tag declared for a competition.
+
+**Submodules:** other repositories (e.g. `BYU-CCDC/public-ccdc-resources`) include this
+repository as a git submodule. GitHub leaves submodules out of archive downloads and raw
+file links, so the loader always downloads from this repository. That's why the same
+`loader.ps1` works however it was reached. Updating the submodule pointer in the other
+repository is only for people browsing or cloning it; the loader doesn't depend on it.
 
 ### `Import-Module`: `WindowsHardening.psm1`
 

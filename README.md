@@ -37,14 +37,54 @@ Run in an elevated Windows PowerShell 5.1 session:
 irm https://raw.githubusercontent.com/hyper-lang/CCDC-Win-Module/main/loader.ps1 | iex
 ```
 
-`loader.ps1` downloads the repository archive, extracts it to
-`$env:TEMP\CCDC-Win-Module`, allows unsigned scripts for the current session only
-(`-Scope Process`), and imports the module. Nothing is installed; open a new
-session and run it again to reload. To pin a branch, tag, or commit:
+`loader.ps1` downloads this repository's archive (it is small: the module and its
+docs), keeps only the `WindowsHardening` folder in `%TEMP%\CCDC-Win-Module`, allows
+unsigned scripts for the current session only (`-Scope Process`), and imports the
+module. It doesn't use the GitHub API, so there's no rate limit. Nothing is
+installed; open a new session and run it again to reload.
+
+To pin a tag or commit, or test a branch:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hyper-lang/CCDC-Win-Module/main/loader.ps1))) -Ref v1.0.0
+$loader = [scriptblock]::Create((irm https://raw.githubusercontent.com/hyper-lang/CCDC-Win-Module/main/loader.ps1))
+& $loader -Ref v1.0.0
+& $loader -Ref my-branch
 ```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `-Repo` | `hyper-lang/CCDC-Win-Module` | The module's own repository |
+| `-Path` | `WindowsHardening` | Module folder in that repository |
+| `-Ref` | `main` | Branch, tag or commit |
+| `-Destination` | `%TEMP%\CCDC-Win-Module` | Where the module goes (replaced on every run) |
+
+> **Competitions:** CCDC requires team-written tools to be frozen at the version
+> you declare. Tag that version (e.g. `v1.0.0`), declare the tag, and load it with
+> `-Ref v1.0.0` (or set that as the `-Ref` default in the loader).
+
+### Including the module in another repository
+
+Other repositories, such as `BYU-CCDC/public-ccdc-resources`, can include this
+repository as a git submodule, e.g. at `windows/hardening/CCDC-Win-Module`:
+
+```bash
+git submodule add https://github.com/hyper-lang/CCDC-Win-Module.git windows/hardening/CCDC-Win-Module
+git commit -m "Add WindowsHardening module as a submodule"
+```
+
+A submodule is a pointer to one commit of this repository. To move it to the
+latest `main`:
+
+```bash
+git submodule update --remote windows/hardening/CCDC-Win-Module
+git commit -am "Update WindowsHardening submodule"
+```
+
+GitHub leaves submodules out of archive downloads and raw file links, so always
+load the module from **this** repository's loader URL (above), not through the
+other repository. Anyone cloning the other repository needs
+`git clone --recurse-submodules`, or `git submodule update --init` afterwards, to
+get the files.
 
 ### From a local copy
 
