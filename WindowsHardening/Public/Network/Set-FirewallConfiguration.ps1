@@ -112,8 +112,8 @@ function Set-FirewallConfiguration {
                 }
 
                 if (-not $ready) {
-                    Write-Status "Firewall configuration skipped by user" -LogOnly
-                    throw "Operation skipped by user"
+                    # Invoke-HardeningOperation counts OperationCanceledException as a skip.
+                    throw [System.OperationCanceledException]::new("Firewall configuration cancelled by user")
                 }
             }
 
@@ -137,14 +137,15 @@ function Set-FirewallConfiguration {
                 Write-Status "Additional ports: $($extraPorts -join ', ')" -LogMessage "Additional firewall ports: $($extraPorts -join ', ')"
             }
 
-            # Backup current firewall config
-            $FirewallBackupPath = Join-Path $script:HardeningContext.LogPath 'fwback.wfw'
-            Write-Host "Backing up current Windows Firewall policy to $FirewallBackupPath" -ForegroundColor Yellow
-            try {
-                netsh advfirewall export "$FirewallBackupPath" | Out-Null
-                Write-Host "Backup successful. To restore, use: Import-NetFirewallPolicy -Path '$FirewallBackupPath'" -ForegroundColor Green
-            } catch {
-                Write-Host "Error during backup: $($_.Exception.Message). Continuing with rule modification." -ForegroundColor Red
+            # Back up the current policy. One file per run, so re-running never overwrites the
+            # original pre-hardening backup. netsh reports failure only through its exit code.
+            $FirewallBackupPath = Join-Path $script:HardeningContext.LogPath "fwback_$(Get-Date -Format 'yyyyMMdd_HHmmss').wfw"
+            Write-Status "Backing up current Windows Firewall policy to $FirewallBackupPath"
+            $netshOutput = netsh advfirewall export "$FirewallBackupPath" 2>&1
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $FirewallBackupPath)) {
+                Write-Status -Level Success "Backup saved. To restore: netsh advfirewall import `"$FirewallBackupPath`""
+            } else {
+                Write-Status -Level Warning "Firewall backup failed (continuing): $(($netshOutput | Out-String).Trim())"
             }
 
             # Enable the firewall profiles and disable all pre-existing inbound and outbound rules
@@ -197,21 +198,25 @@ function Set-FirewallConfiguration {
                 }
             }
 
-            # AD only: re-enable RPC and SMB rules restricted to LocalSubnet
+            # DC only: re-enable the built-in AD DS and DFS Replication inbound rules, limited to
+            # the local subnet. These cover what the port list cannot: AD's dynamic RPC ports
+            # (replication, Netlogon, SAM/LSA) and SYSVOL replication. Selected by rule group, not
+            # by name wildcards: "*RPC*" also matched the Remote Service / Scheduled Task / Event
+            # Log / WMI management rules, and "*445*" re-scoped this function's own Allow rules.
             if ($isDC) {
-                $rpcRules = Get-NetFirewallRule | Where-Object { $_.Name -like "*RPC*" -or $_.DisplayName -like "*135*" }
-                if ($rpcRules) {
-                    $rpcRules | Set-NetFirewallRule -RemoteAddress "LocalSubnet" -Enabled "True"
-                }
-                $smbRules = Get-NetFirewallRule | Where-Object { $_.Name -like "*SMB*" -or $_.DisplayName -like "*139*" -or $_.DisplayName -like "*445*" }
-                if ($smbRules) {
-                    $smbRules | Set-NetFirewallRule -RemoteAddress "LocalSubnet" -Enabled "True"
+                $adRules = @(Get-NetFirewallRule -Direction Inbound -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayGroup -in 'Active Directory Domain Services', 'DFS Replication' })
+                if ($adRules.Count -gt 0) {
+                    $adRules | Set-NetFirewallRule -RemoteAddress LocalSubnet -Enabled True
+                    Write-Status -Level Success "Re-enabled $($adRules.Count) AD DS / DFS Replication rule(s) for the local subnet"
+                } else {
+                    Write-Status -Level Warning "No 'Active Directory Domain Services' firewall rules found; AD RPC traffic (replication, domain joins) may be blocked"
                 }
             }
 
             Write-Status -Level Success "Firewall configured successfully" -LogMessage "Firewall configuration completed"
         } catch {
-            if ($_.Exception.Message -ne "Operation skipped by user") {
+            if ($_.Exception -isnot [System.OperationCanceledException]) {
                 Write-Status -Level Error "Firewall configuration failed: $($_.Exception.Message)"
             }
             throw

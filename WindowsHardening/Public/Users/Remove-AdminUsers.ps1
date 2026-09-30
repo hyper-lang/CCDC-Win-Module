@@ -1,3 +1,11 @@
+# The built-in Administrator account (RID 500), matched by SID so a renamed account is
+# still protected. Groups nested in the admin groups (including Domain Admins and
+# Enterprise Admins inside Administrators) are removed on purpose.
+function Test-BuiltInAdminPrincipal {
+    param($Member)
+    "$($Member.SID)" -match '-500$'
+}
+
 function Remove-AdminUsers {
     [CmdletBinding()]
     param()
@@ -24,7 +32,7 @@ function Remove-AdminUsers {
                             try {
                                 $username = $member.SAMAccountName
 
-                                if ($ExclusionList -contains $username) {
+                                if ($ExclusionList -contains $username -or (Test-BuiltInAdminPrincipal $member)) {
                                     Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group"
                                     continue
                                 }
@@ -64,7 +72,7 @@ function Remove-AdminUsers {
                         try {
                             $username = $member.Name.Split('\')[-1]
 
-                            if ($ExclusionList -contains $username) {
+                            if ($ExclusionList -contains $username -or (Test-BuiltInAdminPrincipal $member)) {
                                 Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group"
                                 continue
                             }

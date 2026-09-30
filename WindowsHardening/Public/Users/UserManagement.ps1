@@ -26,6 +26,15 @@ function New-ADUserAccount {
 }
 
 function Set-UserPassword {
+    <#
+    .SYNOPSIS
+        Sets a local or AD account's password; optionally adds the account to the admin group.
+    .DESCRIPTION
+        The password comes from -Password, or is derived from -SaltPhrase + -WordlistData
+        (Zulu), or is typed at a prompt. Throws if the account does not exist, or if a
+        given/derived password cannot be set, so callers can count the failure. Only a typed
+        password is re-prompted after a failure (e.g. complexity rules); an empty entry gives up.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
@@ -44,39 +53,78 @@ function Set-UserPassword {
 
     $isDC = (Get-OperatingSystemInfo).IsDomainController
 
-    if (-not $Password) {
-        if ($SaltPhrase -and $WordlistData) {
-            # Non-interactive: derive a deterministic password from the salt phrase. Required
-            # over WinRM, where Read-Host is unavailable.
-            $Password = New-Password -Username $Username -SeedPhrase $SaltPhrase -WordlistData $WordlistData
-        } else {
+    # Check first: setting a password on a missing account can never succeed.
+    $exists = if ($isDC) {
+        [bool](Get-ADUser -Filter "SamAccountName -eq '$Username'")
+    } else {
+        [bool](Get-LocalUser -Name $Username -ErrorAction Ignore)
+    }
+    if (-not $exists) {
+        throw "User '$Username' does not exist"
+    }
+
+    if (-not $Password -and $SaltPhrase -and $WordlistData) {
+        # Non-interactive: derive a deterministic password from the salt phrase. Required
+        # over WinRM, where Read-Host is unavailable.
+        $Password = New-Password -Username $Username -SeedPhrase $SaltPhrase -WordlistData $WordlistData
+    }
+    $prompted = -not $Password
+
+    while ($true) {
+        if ($prompted) {
             $Password = Read-SecretInput $PasswordPrompt
-            $confirmPassword = Read-SecretInput "Confirm password: "
-            if ($Password -ne $confirmPassword) {
-                Write-Host "Passwords do not match." -ForegroundColor Red
-                Set-UserPassword -Username $Username -PasswordPrompt $PasswordPrompt -AddToAdmins:$AddToAdmins
-                return
+            if (-not $Password) {
+                throw "No password entered for '$Username'"
             }
+            if ($Password -ne (Read-SecretInput "Confirm password: ")) {
+                Write-Status -Level Warning "Passwords do not match. Try again (Enter to give up)."
+                continue
+            }
+        }
+
+        $securePassword = ConvertTo-SecureString -AsPlainText $Password -Force
+        try {
+            if ($isDC) {
+                Set-ADAccountPassword -Identity $Username -Reset -NewPassword $securePassword -ErrorAction Stop
+            } else {
+                Set-LocalUser -Name $Username -Password $securePassword -ErrorAction Stop
+            }
+            break
+        } catch {
+            if (-not $prompted) {
+                throw "Could not set password for '$Username': $($_.Exception.Message)"
+            }
+            Write-Status -Level Error "Could not set password for ${Username}: $($_.Exception.Message)"
+            Write-Status -Level Warning "Try a different password (likely complexity requirements), or press Enter to give up."
         }
     }
 
-    $securePassword = ConvertTo-SecureString -AsPlainText $Password -Force
-    try {
-        if ($isDC) {
-            Set-ADAccountPassword -Identity $Username -Reset -NewPassword $securePassword -ErrorAction Stop
-            if ($AddToAdmins) { Add-ADGroupMember -Identity "Domain Admins" -Members $Username -ErrorAction SilentlyContinue }
-        } else {
-            Get-LocalUser -Name $Username | Set-LocalUser -Password $securePassword -ErrorAction Stop
-            if ($AddToAdmins) { Add-LocalGroupMember -Group "Administrators" -Member $Username -ErrorAction SilentlyContinue }
+    if ($AddToAdmins) {
+        # Already being a member is fine; anything else is reported but does not undo the password.
+        try {
+            if ($isDC) {
+                Add-ADGroupMember -Identity "Domain Admins" -Members $Username -ErrorAction Stop
+            } else {
+                Add-LocalGroupMember -Group "Administrators" -Member $Username -ErrorAction Stop
+            }
+        } catch {
+            if ($_.Exception.Message -notmatch 'already a member|member of the group') {
+                Write-Status -Level Warning "Could not add $Username to the admin group: $($_.Exception.Message)"
+            }
         }
-    } catch {
-        Write-Host "Error setting password for ${Username}: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Please try a different password (likely complexity requirements)." -ForegroundColor Yellow
-        Set-UserPassword -Username $Username -PasswordPrompt $PasswordPrompt -Password $null -AddToAdmins:$AddToAdmins
     }
 }
 
 function Initialize-CompetitionUsers {
+    <#
+    .SYNOPSIS
+        Resets the Administrator password and creates the competition accounts.
+    .DESCRIPTION
+        DC: Administrator, plus domain users ccdcuser2 (standard) and ccdcuser3 (Domain Admin).
+        Otherwise: Administrator, plus local users ccdcuser1 (Administrators) and ccdcuser2.
+        Each account is handled on its own, so one failure does not stop the others.
+        Returns the number of accounts that failed.
+    #>
     [CmdletBinding()]
     param(
         [string[]]$WordlistData,
@@ -86,47 +134,52 @@ function Initialize-CompetitionUsers {
     )
 
     $isDC = (Get-OperatingSystemInfo).IsDomainController
+    $failed = 0
+
+    $passwordArgs = @{ WordlistData = $WordlistData; SaltPhrase = $SaltPhrase }
+
+    Write-Host "Changing Administrator password..." -ForegroundColor Green
+    try {
+        Set-UserPassword -Username "Administrator" -PasswordPrompt "Enter new password for Administrator: " @passwordArgs
+    } catch {
+        $failed++
+        Write-Status -Level Error "Administrator password NOT changed: $($_.Exception.Message)"
+    }
 
     if ($isDC) {
-        # DC path: change Administrator password + create ccdcuser2 (standard) and
-        # ccdcuser3 (Domain Admin) in AD. ccdcuser1 is local-only and is not created here.
-        Write-Host "Changing Administrator password..." -ForegroundColor Green
-        Set-UserPassword -Username "Administrator" -PasswordPrompt "Enter new password for Administrator: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-
+        # ccdcuser2 (standard) and ccdcuser3 (Domain Admin) in AD; ccdcuser1 is local-only.
         # Lookups use -Filter: Get-ADUser -Identity throws for a missing user even with
         # -ErrorAction SilentlyContinue. New-ADUser without a password creates a disabled
         # account, so each user is enabled once its password is set.
         Write-Host "`nCreating domain users ccdcuser2 and ccdcuser3..."
         foreach ($u in @("ccdcuser2", "ccdcuser3")) {
-            if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
-                New-ADUserAccount -Name $u -SamAccountName $u
+            try {
+                if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
+                    New-ADUserAccount -Name $u -SamAccountName $u
+                }
+                Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser3") @passwordArgs
+                Enable-ADAccount -Identity $u -ErrorAction Stop
+                Write-Status -Level Success "$u ready" -LogOnly
+            } catch {
+                $failed++
+                Write-Status -Level Warning "Domain user '$u' not set up: $($_.Exception.Message)" -LogMessage "Domain user '$u' setup failed: $($_.Exception.Message)"
             }
-        }
-
-        # Skip a user whose creation failed: Set-UserPassword retries by prompting, which
-        # never succeeds for a missing account, and Enable-ADAccount throws on one.
-        Write-Host "`nSetting passwords for CCDC domain users..."
-        foreach ($u in @("ccdcuser2", "ccdcuser3")) {
-            if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
-                Write-Status -Level Warning "Domain user '$u' not found; skipping. Create it with 'New-ADUser' and rerun." -LogMessage "Domain user '$u' not found after creation; password and enable skipped"
-                continue
-            }
-            Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser3") -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-            Enable-ADAccount -Identity $u
         }
     } else {
-        # Local path: change Administrator password + create ccdcuser1/2
-        Write-Host "Changing Administrator password..." -ForegroundColor Green
-        Set-UserPassword -Username "Administrator" -PasswordPrompt "Enter new password for Administrator: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-
         Write-Host "`nCreating ccdcuser1 and ccdcuser2..."
-        @("ccdcuser1", "ccdcuser2") | ForEach-Object {
-            if (-not (Get-LocalUser -Name $_ -ErrorAction Ignore)) {
-                New-LocalUser -Name $_ -NoPassword
+        foreach ($u in @("ccdcuser1", "ccdcuser2")) {
+            try {
+                if (-not (Get-LocalUser -Name $u -ErrorAction Ignore)) {
+                    New-LocalUser -Name $u -NoPassword -ErrorAction Stop | Out-Null
+                }
+                Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser1") @passwordArgs
+                Write-Status -Level Success "$u ready" -LogOnly
+            } catch {
+                $failed++
+                Write-Status -Level Warning "Local user '$u' not set up: $($_.Exception.Message)" -LogMessage "Local user '$u' setup failed: $($_.Exception.Message)"
             }
         }
-        Write-Host "`nSetting passwords for CCDC users..."
-        Set-UserPassword -Username "ccdcuser1" -PasswordPrompt "Enter password for ccdcuser1: " -AddToAdmins -WordlistData $WordlistData -SaltPhrase $SaltPhrase
-        Set-UserPassword -Username "ccdcuser2" -PasswordPrompt "Enter password for ccdcuser2: " -WordlistData $WordlistData -SaltPhrase $SaltPhrase
     }
+
+    return $failed
 }

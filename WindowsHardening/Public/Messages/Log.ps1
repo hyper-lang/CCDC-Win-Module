@@ -131,14 +131,16 @@ function Show-OperationSummary {
     Write-Host "`nIndividual Operations:" -ForegroundColor Yellow
     foreach ($entry in $script:log.GetEnumerator()) {
         $status = $entry.Value
+        # First match wins (break): failure and skip wording is checked before success
+        # wording, since an error message can contain words like "completed".
         $color = switch -Wildcard ($status) {
-            "*successfully*" { "Green" }
-            "*Enabled*"      { "Green" }
-            "*Completed*"    { "Green" }
-            "*Mitigated*"    { "Green" }
-            "*Failed*"       { "Red" }
-            "*Disabled*"     { "Red" }
-            "*Skipped*"      { "Yellow" }
+            "Failed*"        { "Red"; break }
+            "Skipped*"       { "Yellow"; break }
+            "*successfully*" { "Green"; break }
+            "*Enabled*"      { "Green"; break }
+            "*Completed*"    { "Green"; break }
+            "*Mitigated*"    { "Green"; break }
+            "*Disabled*"     { "Red"; break }
             default          { "White" }
         }
         Write-Host "  $($entry.Key): " -NoNewline -ForegroundColor White
@@ -159,7 +161,7 @@ function Show-OperationSummary {
 
     if ($script:OperationResults.Skipped -gt 0) {
         Write-Host "`nSkipped Operations (with reasons):" -ForegroundColor Yellow
-        $skippedOps = $script:log.GetEnumerator() | Where-Object { $_.Value -like "*Skipped*" }
+        $skippedOps = $script:log.GetEnumerator() | Where-Object { $_.Value -like "Skipped*" }
         foreach ($op in $skippedOps) {
             Write-Host "  - $($op.Key): $($op.Value)" -ForegroundColor Yellow
             Write-Status -Level Skip -LogOnly "$($op.Key) - $($op.Value)"

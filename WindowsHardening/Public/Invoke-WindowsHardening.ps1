@@ -7,7 +7,7 @@
         checks for administrator rights, then runs:
 
           1. Invoke-UserHardening          - admin removal, Zulu password rotation, RDP group
-                                             reset, WDigest/LSA credential hardening
+                                             reset, WDigest credential hardening
           2. Invoke-ServiceHardening       - SMB + unused network protocols
           3. Invoke-NetworkHardening       - firewall, remote-management teardown
           4. Install-Splunk                - unless -SkipSplunk

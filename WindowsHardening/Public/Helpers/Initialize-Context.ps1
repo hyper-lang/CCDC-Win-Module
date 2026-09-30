@@ -1,10 +1,11 @@
 ﻿#Requires -Version 5.1
 
-# Initialize-Context.ps1 - Hardening context: data files, current user, port definitions.
+# Initialize-Context.ps1 - Hardening context: data files and port definitions.
 
 # -- Module constants ---------------------------------------------------------
 
-$script:CcdcRepoUrl = 'https://raw.githubusercontent.com/BYU-CCDC/public-ccdc-resources/main/windows/hardening/'
+# No trailing slash: callers append "/<file>".
+$script:CcdcRepoUrl = 'https://raw.githubusercontent.com/BYU-CCDC/public-ccdc-resources/main/windows/hardening'
 $script:RequiredFiles = @('ports.json', 'patchURLs.json', 'wordlist.txt')
 $script:FallbackPorts = @{
     ports = @{
@@ -52,9 +53,6 @@ function Initialize-Context {
                 Write-Verbose "File already exists: $filename"
             }
         }
-
-        # Set current user
-        $script:HardeningContext.CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
         # Load port data
         $portsFile = Join-Path $script:DataPath 'ports.json'

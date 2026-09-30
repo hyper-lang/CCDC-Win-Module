@@ -6,9 +6,8 @@
     .DESCRIPTION
         Runs the full service hardening sequence in the recommended order:
 
-          1. Update-SMB                  - disables SMBv1, enforces SMBv2/3, enables
-                                          SMB signing, and applies related registry
-                                          hardening (prevents EternalBlue and related).
+          1. Update-SMB                  - disables SMBv1 (EternalBlue), enables SMBv2/3,
+                                          and requires SMB signing (blocks SMB relay).
           2. Disable-UnusedNetworkProtocols - disables IPv6 on all active adapters and
                                           disables NetBIOS over TCP/IP.
 

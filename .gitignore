@@ -11,7 +11,7 @@ access/
 users_zulu.csv
 pcr.csv
 hard.txt
-fwback.wfw
+fwback*.wfw
 
 # Tooling
 __pycache__/

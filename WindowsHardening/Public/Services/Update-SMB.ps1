@@ -2,9 +2,9 @@ function Update-SMB {
     [CmdletBinding()]
     param()
 
-    $smbUpgradeCompatible = @("Client8", "Client10", "Client11", "Server2012", "Server2012R2", "Server2016", "Server2019", "Server2022")
+    $smbUpgradeCompatible = @("Client8", "Client10", "Client11", "Server2012", "Server2012R2", "Server2016", "Server2019", "Server2022", "Server2025")
 
-    Invoke-HardeningOperation -OperationName "Upgrade SMB" -OSCompatibility $smbUpgradeCompatible -ProgressMessage "Enabling SMBv2/v3 and disabling SMBv1 for improved security" -ScriptBlock {
+    Invoke-HardeningOperation -OperationName "Upgrade SMB" -OSCompatibility $smbUpgradeCompatible -ProgressMessage "Enabling SMBv2/v3, disabling SMBv1, and requiring SMB signing" -ScriptBlock {
         if (-not [bool](Get-Module -ListAvailable -Name SmbShare)) {
             Write-Status -Level Warning "SMB module not available. Attempting to import..."
             try {
@@ -27,6 +27,7 @@ function Update-SMB {
                 $smbv3Enabled = $null
             }
             $restart = $false
+            $changed = $false
 
             Write-Status "Current SMB Configuration:"
             if ($smbv1Enabled) {
@@ -75,9 +76,21 @@ function Update-SMB {
                 Write-Status "SMBv1 already disabled"
             }
 
+            # Require signing on the SMB server (blocks SMB relay). Every client since Windows
+            # 2000 supports signing, and DCs already require it by default. Takes effect for
+            # new connections; no restart needed.
+            if (-not $smbConfig.RequireSecuritySignature -or -not $smbConfig.EnableSecuritySignature) {
+                Write-Status "Requiring SMB signing..."
+                Set-SmbServerConfiguration -RequireSecuritySignature $true -EnableSecuritySignature $true -Force -ErrorAction Stop
+                Write-Status -Level Success "SMB signing required" -LogMessage "Enabled and required SMB server signing"
+                $changed = $true
+            } else {
+                Write-Status "SMB signing already required"
+            }
+
             if ($restart -eq $true) {
                 Write-Status -Level Warning "System restart recommended for SMB changes to take full effect" -LogMessage "System restart may be required for SMB changes"
-            } else {
+            } elseif (-not $changed) {
                 Write-Status -Level Success "SMB configuration is already optimal"
             }
         } catch {

@@ -39,6 +39,13 @@ function Initialize-System {
             Write-Status -Level Warning "OS detection failed; OS-specific steps will be skipped: $($_.Exception.Message)"
         }
 
+        # Before Start-HardeningLog, which writes it into the log header.
+        try {
+            $script:HardeningContext.CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        } catch {
+            $script:HardeningContext.CurrentUser = $null
+        }
+
         Start-HardeningLog -LogPath $LogPath
         Reset-OperationStatus
         Initialize-Context

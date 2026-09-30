@@ -129,8 +129,8 @@ All shared state is module-scoped (`$script:`). Nothing uses globals except the
 | Variable | Set by | Holds |
 |---|---|---|
 | `$script:HardeningContext.OS` | `Get-OperatingSystemInfo` at import | OS object (below); `$null` if detection failed |
-| `$script:HardeningContext.LogPath` | `Start-HardeningLog` | Log directory; also where `fwback.wfw` and Zulu output go |
-| `$script:HardeningContext.CurrentUser` | `Initialize-Context` | `DOMAIN\user` running the module |
+| `$script:HardeningContext.LogPath` | `Start-HardeningLog` | Log directory; also where the `fwback_<timestamp>.wfw` firewall backups and Zulu output go |
+| `$script:HardeningContext.CurrentUser` | `Initialize-System` | `DOMAIN\user` running the module |
 | `$script:HardeningContext.Ports` | `Initialize-Context` | Parsed `ports.json`, or `$script:FallbackPorts` |
 | `$script:HardeningContext.Initialized` | `Initialize-System` | Whether setup has run this session |
 | `$script:DataPath` | `.psm1` | Path to `Data/` |
@@ -163,11 +163,11 @@ run it returns immediately unless `-Force` is given.
 Initialize-System [-Force] [-LogPath <dir>]
   1. Initialized = $true          (set first: see "recursion" below)
   2. OS = Get-OperatingSystemInfo (returns the cached object from import)
-  3. Start-HardeningLog           new Hardening_<timestamp>.log; resets counters and $script:log
-  4. Reset-OperationStatus        pre-fills every $script:TrackedOperations name as "Not executed"
-  5. Initialize-Context           an operation of its own, "Initialize Context":
+  3. CurrentUser                  set here so the log header can include it
+  4. Start-HardeningLog           new Hardening_<timestamp>.log; resets counters and $script:log
+  5. Reset-OperationStatus        pre-fills every $script:TrackedOperations name as "Not executed"
+  6. Initialize-Context           an operation of its own, "Initialize Context":
                                     - downloads any missing Data/ file from $script:CcdcRepoUrl
-                                    - sets CurrentUser
                                     - loads ports.json (or the fallback table)
 ```
 
@@ -228,13 +228,18 @@ What it does, in order:
    script block.
 6. If the block finishes, it prints `<name> completed successfully`, increments
    `Successful`, and sets the status to "Executed successfully".
-7. If the block throws, it prints the error, exception type and inner exception,
-   increments `Failed`, and records "Failed with error: ...". **It does not rethrow.**
-   That is what lets one failed step leave the rest of the run going.
+7. If the block throws a `System.OperationCanceledException`, it counts a **skip**, not
+   a failure, and records "Skipped - <message>". Throw this when the user backs out,
+   for example by pressing Q at a prompt:
+   `throw [System.OperationCanceledException]::new("Cancelled by user")`.
+8. If the block throws anything else, it prints the error, exception type and inner
+   exception, increments `Failed`, and records "Failed with error: ...". **It does not
+   rethrow.** That is what lets one failed step leave the rest of the run going.
 
 Rules for the script block:
 
-- **Throw to fail.** A step that hits a problem it can't work around should `throw`. A
+- **Throw to fail; throw `OperationCanceledException` to skip.** A step that hits a
+  problem it can't work around should `throw`. A
   problem that is only worth mentioning should be a `Write-Status -Level Warning`; the
   step still counts as successful.
 - **Non-terminating errors don't fail a step.** Most cmdlets report problems as
@@ -265,7 +270,7 @@ There are two levels:
 Invoke-WindowsHardening                 full run; new log; pre-flight checks; final summary
 ├── Invoke-UserHardening                Users 1/4 .. 4/4
 │   ├── Remove-AdminUsers
-│   ├── Set-ZuluPassword -Initial       (wrapped here as the "Zulu Passwords" operation)
+│   ├── Set-ZuluPassword -Initial       ("Zulu Passwords" operation)
 │   ├── Remove-RDPUsers
 │   └── Protect-Mimikatz
 ├── Invoke-ServiceHardening             Services 1/2 .. 2/2
@@ -407,9 +412,11 @@ is no log file. It isn't exported. Call `Write-Status -LogOnly` instead. Only
 - **`Set-OperationStatus <key> <text>`** records a line for the summary.
   `Invoke-HardeningOperation` does this automatically.
 - **`Reset-OperationStatus`** marks every tracked operation "Not executed".
-- **`Show-OperationSummary`** prints the OS, each operation's status (colored by
-  keywords in the text: "successfully" is green, "Failed" red, "Skipped" yellow), the
-  counters, skipped operations with reasons, and warnings. Menu option `0` calls it.
+- **`Show-OperationSummary`** prints the OS, each operation's status, the counters,
+  skipped operations with reasons, and warnings. Menu option `0` calls it. Status
+  colors come from the text: a status starting with "Failed" is red, one starting with
+  "Skipped" is yellow, and "successfully" is green. Start failure and skip statuses
+  with those words.
 
 ---
 

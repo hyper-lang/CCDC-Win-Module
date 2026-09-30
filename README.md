@@ -97,7 +97,7 @@ WindowsHardening/
 Data files are read from `Data/`, so the module works from any directory and
 without internet access; setup downloads a file from GitHub only if it is
 missing. Output goes to the log directory (`-LogPath`, default
-`C:\Windows\Logs\Hardening`): the run log, the firewall backup (`fwback.wfw`),
+`C:\Windows\Logs\Hardening`): the run log, a firewall backup per run (`fwback_<timestamp>.wfw`),
 and Zulu's `zulu.log` / `users_zulu.csv`. Errors from a `Invoke-WindowsHardening`
 run are also appended to `Desktop\hard.txt`.
 
@@ -224,14 +224,18 @@ Invoke-HardeningMenu -Force -Selection 15
 
 ### `Install-Splunk`
 
-Downloads and runs the Splunk Universal Forwarder setup script. `-IP` is
-mandatory; `-Version` is optional (defaults to empty).
+Downloads and runs the CCDC `splunk.ps1` to install the Splunk Universal
+Forwarder, forwarding to `<IP>:9997`. `-IP` is mandatory (just the address;
+`splunk.ps1` adds the port). `splunk.ps1` detects the Windows version itself;
+`-Version` overrides it. `splunk.ps1` prompts for the Splunk admin password.
 
 ```powershell
-# Non-interactive (recommended)
-Install-Splunk -Version 2022 -IP 10.0.0.5
+Install-Splunk -IP 10.0.0.5
 
-# Interactive via the menu (menu option 16 prompts for IP and version)
+# Override the detected version (10, 2019, 2012R2, or "Windows Server 2019")
+Install-Splunk -IP 10.0.0.5 -Version 2019
+
+# Via the menu (option 16 prompts for the IP)
 Invoke-HardeningMenu -Force -Selection 16
 ```
 
@@ -389,8 +393,8 @@ ignore case); spell out `-User` for a single user.
 
 ### `Update-SMB`
 
-Enables SMBv2/v3 and disables SMBv1 (where supported by the edition). No
-prompts.
+Enables SMBv2/v3, disables SMBv1, and requires SMB server signing (where
+supported by the edition). No prompts.
 
 ```powershell
 Update-SMB
@@ -445,7 +449,7 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `-IP` | string | Yes | Splunk server IP |
-| `-Version` | string | No | OS version tag (`7`, `8`, `10`, `11`, `2012`, `2016`, ...) |
+| `-Version` | string | No | Override the auto-detected Windows version (`10`, `2019`, `2012R2`, or `Windows Server 2019`) |
 
 ### `Invoke-HardeningMenu` parameters
 

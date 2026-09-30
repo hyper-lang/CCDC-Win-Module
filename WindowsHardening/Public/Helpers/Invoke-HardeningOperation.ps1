@@ -56,6 +56,12 @@ function Invoke-HardeningOperation {
         $script:OperationResults.Successful++
         Set-OperationStatus $OperationName "Executed successfully"
 
+    } catch [System.OperationCanceledException] {
+        # A step throws OperationCanceledException when the user backs out of it (e.g. Q at
+        # a prompt): that is a skip, not a failure.
+        Write-Status -Level Skip "$OperationName : $($_.Exception.Message)"
+        $script:OperationResults.Skipped++
+        Set-OperationStatus $OperationName "Skipped - $($_.Exception.Message)"
     } catch {
         Write-Status -Level Error "$OperationName : $($_.Exception.Message)"
         Write-Status -Level Error -Tag 'ERROR DETAILS' "Exception Type: $($_.Exception.GetType().FullName)"

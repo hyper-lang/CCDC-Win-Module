@@ -41,25 +41,26 @@ function Get-OperatingSystemInfo {
         }
         $isDomainJoined = [bool]($computerSystem -and $computerSystem.PartOfDomain)
 
-        $edition = $osInfo.OperatingSystemSKU
-        $editionName = switch ($edition) {
-            { $_ -in 4, 27, 28 } { "Server Core" }
-            { $_ -in 7, 8, 10, 161, 162 } { "Server" }
-            default { "Client" }
-        }
-
+        # Server Core: InstallationType is "Server Core", "Server", or "Client" (2008 R2 and
+        # later). The GUI-feature check only works on 2012/2012 R2 (Server-Gui-Shell does not
+        # exist on 2016+), so it is the fallback. Edition is derived from ProductType
+        # (1 = workstation, 2 = DC, 3 = server) rather than the SKU number, which does not
+        # map cleanly (SKU 4 is Windows Enterprise, 161/162 are Pro for Workstations).
         $isServerCore = $false
         if ($productType -in 2, 3) {
-            try {
-                $serverFeatures = Get-WindowsFeature
-                if ($serverFeatures) {
-                    $guiFeature = $serverFeatures | Where-Object { $_.Name -eq "Server-Gui-Mgmt-Infra" -or $_.Name -eq "Server-Gui-Shell" }
-                    $isServerCore = ($guiFeature -and $guiFeature.InstallState -ne "Installed")
+            $installationType = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name InstallationType -ErrorAction Ignore).InstallationType
+            if ($installationType) {
+                $isServerCore = $installationType -eq 'Server Core'
+            } else {
+                try {
+                    $guiFeature = Get-WindowsFeature -Name Server-Gui-Shell -ErrorAction Stop
+                    $isServerCore = [bool]($guiFeature -and $guiFeature.InstallState -ne 'Installed')
+                } catch {
+                    $isServerCore = $caption -match 'Server Core'
                 }
-            } catch {
-                $isServerCore = ($caption -match "Server Core" -or $editionName -eq "Server Core")
             }
         }
+        $editionName = if ($productType -notin 2, 3) { 'Client' } elseif ($isServerCore) { 'Server Core' } else { 'Server' }
 
         $osVersion = "Unknown"
         $osFamily = "Unknown"

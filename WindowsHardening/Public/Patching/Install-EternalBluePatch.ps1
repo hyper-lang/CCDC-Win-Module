@@ -40,11 +40,16 @@
 
         Write-Host "Installing patch..." -ForegroundColor Cyan
         try {
+            # wusa exit codes: 0 = installed, 3010 = installed (restart required),
+            # 2359302 (0x240006) = already installed, -2145124329 (0x80240017, as a signed int) = not applicable.
             $process = Start-Process -FilePath "wusa.exe" -ArgumentList "$path /quiet /norestart" -Wait -PassThru
-            if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-                throw "Patch installation returned exit code: $($process.ExitCode)"
+            switch ($process.ExitCode) {
+                0          { Write-Status -Level Success "EternalBlue patch installed successfully" -LogOnly }
+                3010       { Write-Status -Level Success "EternalBlue patch installed - restart required to finish" }
+                2359302    { Write-Status -Level Success "EternalBlue patch was already installed" }
+                -2145124329 { throw "Patch is not applicable to this system (wusa 0x80240017) - check the OS version and patchURLs.json" }
+                default    { throw "Patch installation returned exit code: $($process.ExitCode)" }
             }
-            Write-Status -Level Success "EternalBlue patch installed successfully" -LogOnly
         } catch {
             Write-Status -Level Error "Failed to install EternalBlue patch: $($_.Exception.Message)"
             throw

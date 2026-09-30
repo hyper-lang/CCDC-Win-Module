@@ -9,7 +9,7 @@
           1. Remove-AdminUsers      - strips unnecessary local/AD admin privileges
           2. Set-ZuluPassword       - rotates all passwords and creates competition accounts
           3. Remove-RDPUsers        - clears the Remote Desktop Users group
-          4. Protect-Mimikatz       - hardens WDigest and LSA to block credential dumping
+          4. Protect-Mimikatz       - disables WDigest credential caching (no plaintext passwords in LSASS memory)
 
         Each step is independently wrapped in Invoke-HardeningOperation, so a failure
         in one step is logged and counted but does not abort the rest.  Use the skip
@@ -31,7 +31,7 @@
         Skip the Remove-AdminUsers step.
 
     .PARAMETER SkipMimikatz
-        Skip the Protect-Mimikatz (WDigest/LSA) step.
+        Skip the Protect-Mimikatz (WDigest) step.
 
     .EXAMPLE
         Invoke-UserHardening
@@ -74,11 +74,9 @@
     # the rest of the run, so stolen credentials stop working as early as possible)
     if (-not $SkipPasswordChange) {
         $script:NextStepLabel = 'Users 2/4'
-        # Wrapped like the other steps so a Zulu failure is counted but does not abort
-        # the remaining user, network, and policy hardening.
-        Invoke-HardeningOperation -OperationName "Zulu Passwords" -ScriptBlock {
-            Set-ZuluPassword -Initial -SaltPhrase $SaltPhrase
-        }
+        # Set-ZuluPassword runs as its own "Zulu Passwords" operation, so a failure is
+        # counted but does not abort the remaining user, network, and policy hardening.
+        Set-ZuluPassword -Initial -SaltPhrase $SaltPhrase
     } else {
         Write-Host ""
         Write-Status -Level Skip -Tag 'Users 2/4' "SKIPPED - password rotation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: password rotation skipped"
@@ -93,7 +91,7 @@
         Write-Status -Level Skip -Tag 'Users 3/4' "SKIPPED - RDP group reset (-SkipRDP)" -LogMessage "Invoke-UserHardening: RDP group reset skipped"
     }
 
-    # Step 4: Credential hardening (WDigest + LSA)
+    # Step 4: Credential hardening (WDigest)
     if (-not $SkipMimikatz) {
         $script:NextStepLabel = 'Users 4/4'
         Protect-Mimikatz

@@ -168,13 +168,8 @@
             '16' {
                 Write-Host "`n*** Configuring Splunk ***" -ForegroundColor Magenta
                 $ip = if ($SplunkIP) { $SplunkIP } else { Read-Host "`nInput IP address of Splunk Server" }
-                # Default to this machine's version when it is one splunk.ps1 knows.
-                $versions = '7', '8', '10', '11', '2012', '2016', '2019', '2022'
-                $thisVersion = "$($script:HardeningContext.OS.OSFamily)" -replace '^(Server|Client)', ''
-                $SplunkVersion = Read-Choice -Prompt "OS version" -AllowCustom `
-                    -Options @($versions | ForEach-Object { @{ Key = $_; Label = $_ } }) `
-                    -Default $(if ($thisVersion -in $versions) { $thisVersion })
-                Install-Splunk -Version $SplunkVersion -IP $ip
+                # splunk.ps1 detects the Windows version itself.
+                Install-Splunk -IP $ip
             }
             '17' {
                 Write-Host "`n*** Installing EternalBlue Patch ***" -ForegroundColor Magenta

@@ -12,7 +12,7 @@ function Set-ZuluPassword {
 
         [Parameter(HelpMessage = "If we need to download the wordlist, this is the URL to get it from")]
         [Alias("url")]
-        [string]$WordlistUrl = "https://raw.githubusercontent.com/BYU-CCDC/public-ccdc-resources/main/windows/wordlist.txt",
+        [string]$WordlistUrl = "$script:CcdcRepoUrl/wordlist.txt",
 
         # Where zulu.log and users_zulu.csv are written. Default: the module's log directory.
         [string]$OutputDirectory
@@ -23,18 +23,6 @@ function Set-ZuluPassword {
         if ($Initial -and $GenerateOnly) {
             throw "-Initial and -GenerateOnly cannot be used together (-Initial changes account passwords)."
         }
-
-        # Script configuration
-        if (-not $OutputDirectory) {
-            $OutputDirectory = if ($script:HardeningContext.LogPath) { $script:HardeningContext.LogPath } else { $script:DefaultLogPath }
-        }
-        if (-not $GenerateOnly -and -not (Test-Path $OutputDirectory)) {
-            New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
-        }
-        $ExportUsersFile = Join-Path $OutputDirectory "users_zulu.csv"
-        $LogFile = Join-Path $OutputDirectory "zulu.log"
-        $WordlistFile = Join-Path $script:DataPath "wordlist.txt"
-        $ExcludedUsers = @("Administrator", "ccdcuser1", "ccdcuser2", "ccdcuser3")
 
         if ($Help) {
             Write-Host "Usage: Set-ZuluPassword [options]" -ForegroundColor Green
@@ -54,131 +42,167 @@ function Set-ZuluPassword {
             return
         }
 
-        Write-Host "Starting Zulu Password Generator Script..." -ForegroundColor Green
-        Write-ZuluLog -Message "Script started at $(Get-Date)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
-        Write-Host "The default behavior is to change passwords for all users except: $($ExcludedUsers -join ', ')."
-
-        # Generating passwords needs no admin rights; changing them does.
-        if (-not $GenerateOnly) {
-            Test-Prerequisites
-        }
-
-        $IsDomainController = (Get-OperatingSystemInfo).IsDomainController
-        if ($IsDomainController) {
-            Write-Host "Domain Controller detected - AD password operations will be used." -ForegroundColor Green
-        }
-
-        Write-Host "`nPreparing to generate passwords..."
-
-        # Salt phrase: -SaltPhrase if given (non-interactive), otherwise prompt.
-        $seedFromPrompt = $false
-        if ($SaltPhrase) {
-            if ($SaltPhrase.Length -lt 8) {
-                Write-Host "Salt phrase must be at least 8 characters long." -ForegroundColor Red
-                throw "Salt phrase must be at least 8 characters long."
+        # Changing passwords runs as the "Zulu Passwords" operation: counted in the run
+        # summary, logged (Invoke-HardeningOperation runs Initialize-System first), and a
+        # failure does not stop the caller. -GenerateOnly changes nothing and needs no admin
+        # rights or log, so it runs directly.
+        $zulu = {
+            # Script configuration
+            if (-not $OutputDirectory) {
+                $OutputDirectory = if ($script:HardeningContext.LogPath) { $script:HardeningContext.LogPath } else { $script:DefaultLogPath }
             }
-            $seedPhrase = $SaltPhrase
-        } else {
-            $seedFromPrompt = $true
-            while ($true) {
-                $seedPhrase = Read-SecretInput "Enter seed phrase: "
-                $confirmSeedPhrase = Read-SecretInput "Confirm seed phrase: "
+            if (-not $GenerateOnly -and -not (Test-Path $OutputDirectory)) {
+                New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
+            }
+            $ExportUsersFile = Join-Path $OutputDirectory "users_zulu.csv"
+            $LogFile = Join-Path $OutputDirectory "zulu.log"
+            $WordlistFile = Join-Path $script:DataPath "wordlist.txt"
+            $ExcludedUsers = @("Administrator", "ccdcuser1", "ccdcuser2", "ccdcuser3")
 
-                if ($seedPhrase -ne $confirmSeedPhrase) {
-                    Write-Host "Seed phrases do not match. Please retry." -ForegroundColor Yellow
-                    continue
+            Write-Host "Starting Zulu Password Generator Script..." -ForegroundColor Green
+            Write-ZuluLog -Message "Script started at $(Get-Date)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
+            Write-Host "The default behavior is to change passwords for all users except: $($ExcludedUsers -join ', ')."
+
+            # Generating passwords needs no admin rights; changing them does.
+            if (-not $GenerateOnly) {
+                Test-Prerequisites
+            }
+
+            $IsDomainController = (Get-OperatingSystemInfo).IsDomainController
+            if ($IsDomainController) {
+                Write-Host "Domain Controller detected - AD password operations will be used." -ForegroundColor Green
+            }
+
+            Write-Host "`nPreparing to generate passwords..."
+
+            # Salt phrase: -SaltPhrase if given (non-interactive), otherwise prompt.
+            $seedFromPrompt = $false
+            if ($SaltPhrase) {
+                if ($SaltPhrase.Length -lt 8) {
+                    Write-Host "Salt phrase must be at least 8 characters long." -ForegroundColor Red
+                    throw "Salt phrase must be at least 8 characters long."
                 }
-                if ($seedPhrase.Length -lt 8) {
-                    Write-Host "Seed phrase must be at least 8 characters long. Please retry." -ForegroundColor Yellow
-                    continue
-                }
-                break
-            }
-        }
-
-        if (-not (Test-Path $WordlistFile)) {
-            Write-Host "Downloading wordlist file..." -ForegroundColor Green
-            if (-not (Get-FileFromUrl -Url $WordlistUrl -OutputPath $WordlistFile)) {
-                throw "Failed to download wordlist from $WordlistUrl"
-            }
-        }
-        $wordlistData = @(Get-Content $WordlistFile)
-
-        if ($Initial) {
-            Write-Host "Performing initial user setup..." -ForegroundColor Green
-            # A salt given via -SaltPhrase also derives the initial account passwords (needed for
-            # non-interactive runs, where Read-Host fails). A typed seed means someone is at the
-            # keyboard, so those passwords are entered by hand instead.
-            if ($seedFromPrompt) {
-                Initialize-CompetitionUsers -WordlistData $wordlistData
+                $seedPhrase = $SaltPhrase
             } else {
-                Initialize-CompetitionUsers -WordlistData $wordlistData -SaltPhrase $seedPhrase
+                $seedFromPrompt = $true
+                while ($true) {
+                    $seedPhrase = Read-SecretInput "Enter seed phrase: "
+                    $confirmSeedPhrase = Read-SecretInput "Confirm seed phrase: "
+
+                    if ($seedPhrase -ne $confirmSeedPhrase) {
+                        Write-Host "Seed phrases do not match. Please retry." -ForegroundColor Yellow
+                        continue
+                    }
+                    if ($seedPhrase.Length -lt 8) {
+                        Write-Host "Seed phrase must be at least 8 characters long. Please retry." -ForegroundColor Yellow
+                        continue
+                    }
+                    break
+                }
             }
-            Set-OperationStatus "Add Competition Users" "Executed successfully"
-        }
 
-        $rawUsers = if ($User) { @($User) }
-                    elseif ($UsersFile) {
-                        if (-not (Test-Path $UsersFile)) { Write-Host "Users file '$UsersFile' not found." -ForegroundColor Red; throw "Users file not found: $UsersFile" }
-                        Get-Content $UsersFile
-                    }
-                    elseif ($IsDomainController) {
-                        Get-ADUser -Filter * -Properties Enabled | Where-Object { $_.Enabled } | Select-Object -ExpandProperty SamAccountName
-                    }
-                    else {
-                        Get-LocalUser | Where-Object { $_.Enabled } | Select-Object -ExpandProperty Name
-                    }
+            if (-not (Test-Path $WordlistFile)) {
+                Write-Host "Downloading wordlist file..." -ForegroundColor Green
+                if (-not (Get-FileFromUrl -Url $WordlistUrl -OutputPath $WordlistFile)) {
+                    throw "Failed to download wordlist from $WordlistUrl"
+                }
+            }
+            $wordlistData = @(Get-Content $WordlistFile)
 
-        $users = $rawUsers | Where-Object { $_ -notin $ExcludedUsers }
+            $setupFailures = 0
+            if ($Initial) {
+                Write-Host "Performing initial user setup..." -ForegroundColor Green
+                # A salt given via -SaltPhrase also derives the initial account passwords (needed for
+                # non-interactive runs, where Read-Host fails). A typed seed means someone is at the
+                # keyboard, so those passwords are entered by hand instead.
+                $setupFailures = if ($seedFromPrompt) {
+                    Initialize-CompetitionUsers -WordlistData $wordlistData
+                } else {
+                    Initialize-CompetitionUsers -WordlistData $wordlistData -SaltPhrase $seedPhrase
+                }
+                if ($setupFailures -gt 0) {
+                    Set-OperationStatus "Add Competition Users" "Failed for $setupFailures account(s) - see log"
+                } else {
+                    Set-OperationStatus "Add Competition Users" "Executed successfully"
+                }
+            }
 
-        Write-Host "Generating passwords for $($users.Count) users..." -ForegroundColor Green
+            $rawUsers = if ($User) { @($User) }
+                        elseif ($UsersFile) {
+                            if (-not (Test-Path $UsersFile)) { Write-Host "Users file '$UsersFile' not found." -ForegroundColor Red; throw "Users file not found: $UsersFile" }
+                            Get-Content $UsersFile
+                        }
+                        elseif ($IsDomainController) {
+                            Get-ADUser -Filter * -Properties Enabled | Where-Object { $_.Enabled } | Select-Object -ExpandProperty SamAccountName
+                        }
+                        else {
+                            Get-LocalUser | Where-Object { $_.Enabled } | Select-Object -ExpandProperty Name
+                        }
 
-        $failedUsers = 0
+            $users = $rawUsers | Where-Object { $_ -notin $ExcludedUsers }
 
-        if (-not $GenerateOnly) {
-            Remove-Item $ExportUsersFile -ErrorAction Ignore
-            New-Item -ItemType File -Path $ExportUsersFile -Force | Out-Null
-        }
+            Write-Host "Generating passwords for $($users.Count) users..." -ForegroundColor Green
 
-        foreach ($username in $users) {
-            $password = New-Password -Username $username -SeedPhrase $seedPhrase -WordlistData $wordlistData
+            $failedUsers = 0
 
             if (-not $GenerateOnly) {
-                Write-Host "Changing password for user $username..."
-                try {
-                    Set-UserPassword -Username $username -Password $password
-                    if ($IsDomainController) {
-                        Write-Host "Successfully changed AD password for ${username}." -ForegroundColor Green
-                        Write-ZuluLog -Message "Successfully changed AD password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
-                    } else {
-                        Write-Host "Successfully changed password for ${username}." -ForegroundColor Green
-                        Write-ZuluLog -Message "Successfully changed password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
-                    }
-                    Add-Content -Path $ExportUsersFile -Value $username
-                } catch {
-                    $failedUsers++
-                    Write-Host "Failed to change password for ${username}. $($_.Exception.Message)" -ForegroundColor Red
-                    Write-ZuluLog -Message "Failed to change password for ${username}.: $($_.Exception.Message)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
-                }
-            } elseif (-not $PCRFile) {
-                Write-Host "Generated password for user '${username}': ${password}"
+                Remove-Item $ExportUsersFile -ErrorAction Ignore
+                New-Item -ItemType File -Path $ExportUsersFile -Force | Out-Null
             }
 
-            if ($PCRFile) {
-                Add-Content -Path $PCRFile -Value "${username},${password}"
+            foreach ($username in $users) {
+                $password = New-Password -Username $username -SeedPhrase $seedPhrase -WordlistData $wordlistData
+
+                if (-not $GenerateOnly) {
+                    Write-Host "Changing password for user $username..."
+                    try {
+                        Set-UserPassword -Username $username -Password $password
+                        if ($IsDomainController) {
+                            Write-Host "Successfully changed AD password for ${username}." -ForegroundColor Green
+                            Write-ZuluLog -Message "Successfully changed AD password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
+                        } else {
+                            Write-Host "Successfully changed password for ${username}." -ForegroundColor Green
+                            Write-ZuluLog -Message "Successfully changed password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
+                        }
+                        Add-Content -Path $ExportUsersFile -Value $username
+                    } catch {
+                        $failedUsers++
+                        Write-Host "Failed to change password for ${username}. $($_.Exception.Message)" -ForegroundColor Red
+                        Write-ZuluLog -Message "Failed to change password for ${username}.: $($_.Exception.Message)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
+                    }
+                } elseif (-not $PCRFile) {
+                    Write-Host "Generated password for user '${username}': ${password}"
+                }
+
+                if ($PCRFile) {
+                    Add-Content -Path $PCRFile -Value "${username},${password}"
+                }
             }
+
+            if ($GenerateOnly) {
+                Set-OperationStatus "Change Passwords" "Generated only (no changes)"
+            } elseif ($failedUsers -gt 0) {
+                Set-OperationStatus "Change Passwords" "Failed for $failedUsers of $(@($users).Count) user(s)"
+            } else {
+                Set-OperationStatus "Change Passwords" "Executed successfully"
+            }
+
+            Write-Host "`nDone!" -ForegroundColor Green
+            Write-Host "PLEASE REMEMBER TO CHANGE THE ADMINISTRATOR PASSWORD IF NOT DONE EARLIER." -ForegroundColor Yellow
+
+            # Fail the "Zulu Passwords" operation (after every user was attempted) so the run
+            # summary counts it; the per-user details are in the log and zulu.log.
+            $problems = @()
+            if ($failedUsers -gt 0) { $problems += "password change failed for $failedUsers of $(@($users).Count) user(s)" }
+            if ($setupFailures -gt 0) { $problems += "$setupFailures competition account(s) not set up" }
+            if ($problems) { throw ($problems -join '; ') }
         }
 
         if ($GenerateOnly) {
-            Set-OperationStatus "Change Passwords" "Generated only (no changes)"
-        } elseif ($failedUsers -gt 0) {
-            Set-OperationStatus "Change Passwords" "Failed for $failedUsers of $(@($users).Count) user(s)"
+            & $zulu
         } else {
-            Set-OperationStatus "Change Passwords" "Executed successfully"
+            Invoke-HardeningOperation -OperationName "Zulu Passwords" -ScriptBlock $zulu
         }
-
-        Write-Host "`nDone!" -ForegroundColor Green
-        Write-Host "PLEASE REMEMBER TO CHANGE THE ADMINISTRATOR PASSWORD IF NOT DONE EARLIER." -ForegroundColor Yellow
     }
 }
 
