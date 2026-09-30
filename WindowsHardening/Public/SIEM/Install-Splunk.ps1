@@ -26,6 +26,9 @@
 
         # splunk.ps1 adds ":9997" itself; strip a port if one was given.
         $indexerIP = ($IP -replace ':\d+$', '').Trim()
+        if (-not (Test-HostAddress $indexerIP)) {
+            throw "Invalid -IP '$IP': not an IP address or host name"
+        }
 
         $splunkArgs = @{ ip = $indexerIP }
         if ($Version) {

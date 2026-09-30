@@ -14,8 +14,8 @@ function Remove-AdminUsers {
         $isDC = $script:HardeningContext.OS.IsDomainController
 
         if ($isDC) {
-            Write-Host "Cleaning administrator groups on the domain (Domain Admins, Enterprise Admins, Administrators)..." -ForegroundColor Cyan
-            Write-Host "Please go back and add users that need access per the competition scenario" -ForegroundColor Cyan
+            Write-Status "Cleaning administrator groups on the domain (Domain Admins, Enterprise Admins, Administrators)"
+            Write-Status -Level Warning "Afterwards, add back any users the competition scenario needs as admins" -NoLog
 
             $ExclusionList = @("Administrator", "ccdcuser3")
 
@@ -56,7 +56,7 @@ function Remove-AdminUsers {
                 }
             }
         } else {
-            Write-Host "Cleaning local Administrators group..." -ForegroundColor Cyan
+            Write-Status "Cleaning local Administrators group"
 
             $ExclusionList = @("Administrator", "ccdcuser1")
 

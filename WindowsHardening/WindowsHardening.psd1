@@ -53,6 +53,7 @@
         'Show-OperationSummary'
         'Read-YesNo'
         'Read-Choice'
+        'Read-HostAddress'
         'Write-Banner'
         'Read-SecretInput'
 
@@ -71,6 +72,7 @@
         'ConvertTo-WordIndex'
         'Test-IsAdministrator'
         'ConvertTo-PortList'
+        'Test-HostAddress'
 
         # -- Dev/ - experimental ---------------------------------------------
         'Backup-WindowsState'

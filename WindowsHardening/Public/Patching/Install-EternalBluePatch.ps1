@@ -24,11 +24,11 @@
             default { throw "Unsupported OS version for EternalBlue patch: $($script:HardeningContext.OS.OSVersion)" }
         }
 
-        Write-Host "Patch URL: $patchURL" -ForegroundColor Cyan
+        Write-Status "Patch URL: $patchURL"
 
         $path = "$env:TEMP\eternalblue_patch.msu"
 
-        Write-Host "Downloading patch file to $path" -ForegroundColor Cyan
+        Write-Status "Downloading patch file to $path"
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             (New-Object Net.WebClient).DownloadFile($patchURL, $path)
@@ -38,7 +38,7 @@
             throw
         }
 
-        Write-Host "Installing patch..." -ForegroundColor Cyan
+        Write-Status "Installing patch (wusa)..."
         try {
             # wusa exit codes: 0 = installed, 3010 = installed (restart required),
             # 2359302 (0x240006) = already installed, -2145124329 (0x80240017, as a signed int) = not applicable.
@@ -59,6 +59,5 @@
             }
         }
 
-        Write-Host "Patch for $($script:HardeningContext.OS.OSVersion) installed successfully!" -ForegroundColor Green
     }
 }

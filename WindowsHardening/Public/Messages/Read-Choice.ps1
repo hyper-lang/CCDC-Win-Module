@@ -12,6 +12,7 @@ function Read-Choice {
           Label    - text shown next to the key (required for hashtables)
           Value    - what is returned (default: Key)
           Section  - optional header; printed when it changes from the previous option
+          Hidden   - $true: not listed, but its key (and ranges) can still be typed
 
         Input:
           - A key selects that option (case-insensitive).
@@ -55,6 +56,9 @@ function Read-Choice {
         # With -Multiple: Enter (and no -Default) returns an empty array instead of re-prompting.
         [switch]$AllowEmpty,
 
+        # Replaces the generated input hint ("one or more, e.g. ...") shown under the list.
+        [string]$Hint,
+
         [switch]$AllowQuit,
 
         [string]$QuitLabel = 'Cancel'
@@ -72,9 +76,10 @@ function Read-Choice {
                 Label   = "$($option.Label)"
                 Value   = if ($option.Contains('Value')) { $option.Value } else { $key }
                 Section = $option.Section
+                Hidden  = [bool]$option.Hidden
             }
         } else {
-            $items += [PSCustomObject]@{ Key = "$position"; Label = "$option"; Value = "$option"; Section = $null }
+            $items += [PSCustomObject]@{ Key = "$position"; Label = "$option"; Value = "$option"; Section = $null; Hidden = $false }
         }
     }
     if ($items.Count -eq 0 -and -not $AllowCustom) {
@@ -85,10 +90,11 @@ function Read-Choice {
 
     # -- Display -------------------------------------------------------------
     if ($Title) { Write-Banner $Title -Style Inline -Color Green }
-    $keyWidth = ($items | ForEach-Object { $_.Key.Length } | Measure-Object -Maximum).Maximum
+    $shown = @($items | Where-Object { -not $_.Hidden })
+    $keyWidth = ($shown | ForEach-Object { $_.Key.Length } | Measure-Object -Maximum).Maximum
     if ($AllowQuit -and $keyWidth -lt 1) { $keyWidth = 1 }
     $currentSection = $null
-    foreach ($item in $items) {
+    foreach ($item in $shown) {
         if ($item.Section -and $item.Section -ne $currentSection) {
             Write-Banner $item.Section -Style Inline
             $currentSection = $item.Section
@@ -101,14 +107,16 @@ function Read-Choice {
     }
 
     $hints = @()
-    if ($Multiple) {
+    if ($Hint) {
+        $hints += $Hint
+    } elseif ($Multiple) {
         # Example built from the real keys, e.g. "1,3,5-7" for a menu or "22,53,67-80" for ports.
-        $numericKeys = @($items | Where-Object { $_.Key -match '^\d+$' } | ForEach-Object { $_.Key })
+        $numericKeys = @($shown | Where-Object { $_.Key -match '^\d+$' } | ForEach-Object { $_.Key })
         $example = if ($numericKeys.Count -ge 7) { "$($numericKeys[0]),$($numericKeys[2]),$($numericKeys[4])-$($numericKeys[6])" }
                    elseif ($numericKeys.Count -ge 2) { "$($numericKeys[0]),$($numericKeys[1])" }
         $hints += if ($example) { "one or more, e.g. $example" } else { 'one or more, separated by commas' }
     }
-    if ($AllowCustom) { $hints += 'or type values not listed' }
+    if ($AllowCustom -and $shown.Count -gt 0) { $hints += 'or type values not listed' }
     if ($Default) { $hints += "Enter = defaults (*)" }
     elseif ($AllowEmpty -and $Multiple) { $hints += 'Enter = none' }
     if ($hints) { Write-Host ("  (" + ($hints -join '; ') + ")") -ForegroundColor DarkGray }

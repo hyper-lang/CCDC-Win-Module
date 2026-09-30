@@ -29,24 +29,13 @@ function Update-SMB {
             $restart = $false
             $changed = $false
 
-            Write-Status "Current SMB Configuration:"
-            if ($smbv1Enabled) {
-                Write-Host "  SMBv1: Enabled" -ForegroundColor Red
-            } else {
-                Write-Host "  SMBv1: Disabled" -ForegroundColor Green
-            }
-            if ($smbv2Enabled) {
-                Write-Host "  SMBv2: Enabled" -ForegroundColor Green
-            } else {
-                Write-Host "  SMBv2: Disabled" -ForegroundColor Yellow
-            }
+            Write-Status "Current SMB configuration:"
+            Write-Status -Level $(if ($smbv1Enabled) { 'Warning' } else { 'Success' }) "SMBv1: $(if ($smbv1Enabled) { 'Enabled' } else { 'Disabled' })"
+            Write-Status -Level $(if ($smbv2Enabled) { 'Success' } else { 'Warning' }) "SMBv2: $(if ($smbv2Enabled) { 'Enabled' } else { 'Disabled' })"
             if ($null -ne $smbv3Enabled) {
-                if ($smbv3Enabled) {
-                    Write-Host "  SMBv3: Enabled" -ForegroundColor Green
-                } else {
-                    Write-Host "  SMBv3: Disabled" -ForegroundColor Yellow
-                }
+                Write-Status -Level $(if ($smbv3Enabled) { 'Success' } else { 'Warning' }) "SMBv3: $(if ($smbv3Enabled) { 'Enabled' } else { 'Disabled' })"
             }
+            Write-Status -Level $(if ($smbConfig.RequireSecuritySignature) { 'Success' } else { 'Warning' }) "Signing required: $([bool]$smbConfig.RequireSecuritySignature)"
 
             if ($smbv2Enabled -eq $false) {
                 Write-Status "Enabling SMBv2..."

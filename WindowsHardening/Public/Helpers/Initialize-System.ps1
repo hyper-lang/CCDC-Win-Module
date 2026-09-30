@@ -50,7 +50,7 @@ function Initialize-System {
         Reset-OperationStatus
         Initialize-Context
 
-        Write-Host "Initialization complete" -ForegroundColor Green
+        Write-Status -Level Success "Initialization complete"
     } catch {
         $script:HardeningContext.Initialized = $false
         Write-Status -Level Error "Initialization failed: $($_.Exception.Message)" -LogMessage "System initialization failed: $($_.Exception.Message)"

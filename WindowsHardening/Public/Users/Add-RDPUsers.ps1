@@ -17,27 +17,9 @@ function Add-RDPUsers {
             Write-Status "-Force specified with no users; nothing to add."
             return
         } else {
-            $userCount = 0
-            while ($true) {
-                try {
-                    $userCountInput = Read-Host "Enter the number of users you wish to add to the Remote Desktop Users group"
-                    $userCount = [int]$userCountInput
-                    if ($userCount -gt 0) {
-                        break
-                    } else {
-                        Write-Status -Level Error "Please enter a positive number greater than 0."
-                    }
-                } catch {
-                    Write-Status -Level Error "Invalid input. Please enter a valid number."
-                }
-            }
-
-            Write-Host "`nYou will now be prompted to enter $userCount username(s)." -ForegroundColor Yellow
-            Write-Host ""
-
-            for ($i = 1; $i -le $userCount; $i++) {
-                $username = Read-Host "Enter username #$i"
-                $usernames += $username
+            $usernames = Read-Choice -Prompt "Usernames to add to Remote Desktop Users" -Multiple -AllowCustom -AllowQuit
+            if ($null -eq $usernames) {
+                throw [System.OperationCanceledException]::new("Cancelled by user")
             }
         }
 

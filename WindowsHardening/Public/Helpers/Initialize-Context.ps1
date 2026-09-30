@@ -40,7 +40,7 @@ function Initialize-Context {
             $filename = $(Split-Path -Path $file -Leaf)
             $target = Join-Path $script:DataPath $filename
             if (-not (Test-Path $target)) {
-                Write-Host "Downloading $filename..." -ForegroundColor Cyan
+                Write-Status "Downloading $filename (missing from Data\)"
                 try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                     Invoke-WebRequest -Uri "$script:CcdcRepoUrl/$file" -OutFile $target
@@ -64,6 +64,5 @@ function Initialize-Context {
             Write-Status -Level Warning "ports.json not found, using fallback port definitions"
         }
 
-        Write-Host "Context initialized successfully" -ForegroundColor Green
     }
 }

@@ -341,20 +341,35 @@ firewall ports. Keep it that way. Over WinRM there is no console, and `Read-Host
 
 `Invoke-HardeningMenu` is data-driven:
 
-- **`$menuOptions`** is the list shown to the user: `Key`, `Section` and `Label` per
-  entry, in display order. Keys don't have to be in numeric order; 19 appears in the
-  Network section.
-- **`Invoke-MenuAction`** is a `switch` on the key. Each case prints a magenta
-  `*** ... ***` header and calls one function.
+- **`$menuOptions`** lists every option: `Key`, `Label`, and `Section`, the letter of the
+  sub-menu it appears in (`U`, `N`, `S`, `L`). Options without a section (1, A, 0) are on
+  the main screen. Within a section, options appear in list order, so each section's
+  "run all" orchestrator comes first. Keys never change (19 is in the Network section),
+  so typed numbers, `-Selection` and the README stay valid.
+- **`$menuSections`** maps each letter to its section name, in main-screen order. The
+  main screen shows each section with its option numbers, e.g.
+  `U) Users & Credentials (2, 5-10)`.
+- **`Get-ScreenOptions [-Section <letter>]`** builds the `Read-Choice` options for a
+  screen. It lists that screen's options and passes every other option as `Hidden`, so
+  any option number, or a range like `13-15`, works from any screen.
+- **`Invoke-MenuAction`** is a `switch` on the key; each case calls one function.
+  Before the switch, it prints a header built from the option's `$menuOptions` label
+  (`=== Menu 11: Configure Firewall ===`) and writes it to the log, so the log records
+  which options ran. Don't add headers inside the cases.
 - The loop uses `Read-Choice -Multiple`, so `9,10,13` or `13-15` run several options in
-  the order typed.
+  the order typed. A section letter opens that sub-menu, where Q goes back; `u,14`
+  opens Users, then runs 14 after whatever was picked there.
 - `-Force -Selection <key>` runs exactly one option and returns, for scripting.
 - Menu parameters (`-FirewallPorts`, `-SaltPhrase`, ...) are passed down to the options
   that take them.
 
-To add an option, add an entry to `$menuOptions` and a case to `Invoke-MenuAction`. Then
-update the option range in the help text ("5-19") and in the README's
-`Invoke-HardeningMenu` table.
+Menu errors are reported as `Menu option <key> failed: <message>`, on screen and in
+the log.
+
+To add an option, add an entry to `$menuOptions` (with its `Section`) and a case to
+`Invoke-MenuAction`. Then update the option range in the help text ("5-19") and in the
+README's `Invoke-HardeningMenu` section. To add a section, add its letter to
+`$menuSections`; it must not clash with an option key (`A`) or `Q`.
 
 ---
 
@@ -362,8 +377,13 @@ update the option range in the help text ("5-19") and in the README's
 
 **Rule: report what happened with `Write-Status`, and mark sections with `Write-Banner`.**
 Don't pair `Write-Host` with a separate log call. Plain `Write-Host` is fine for text that
-belongs only on screen, such as prompts, tables and progress lines. Some older code still
-uses `Write-Host` for status; convert it when you touch it.
+belongs only on screen, such as prompt help, menus and summary tables.
+
+**Never send secrets through `Write-Status` or `Write-Banner`:** both write to the log
+file. Zulu's `-GenerateOnly` prints generated passwords with `Write-Host` on purpose.
+
+`Enable-AdvancedAuditing` and the `Dev/` backup and restore functions still use
+`Write-Host` for status; convert them when you touch them.
 
 ### `Write-Status` (`Messages/Write-Status.ps1`)
 
@@ -439,11 +459,13 @@ Read-Choice -Prompt <string> [-Options <object[]>] [-Title <string>] [-Multiple]
 ```
 
 - **Options** are plain strings (keyed `1`, `2`, ...) or hashtables with `Key`, `Label`,
-  and optionally `Value` (what gets returned; defaults to `Key`) and `Section` (a header,
-  printed whenever it changes). Keys are case-insensitive.
+  and optionally `Value` (what gets returned; defaults to `Key`), `Section` (a header,
+  printed whenever it changes) and `Hidden` (`$true`: not listed, but its key can still
+  be typed). Keys are case-insensitive.
 - **`-Multiple`** accepts several keys separated by commas or spaces, and numeric ranges
-  like `5-8`. A range selects the *listed* options whose keys fall inside it; it doesn't
-  pass the range through as a value.
+  like `5-8`. A range selects the options (hidden ones included) whose keys fall inside
+  it; it doesn't pass the range through as a value.
+- **`-Hint`** replaces the generated input hint shown under the list.
 - **`-AllowCustom`** accepts values that aren't listed. Each goes through
   `-ValidateCustom`, which returns a normalized value or throws to reject the input.
 - **`-Default`** lists the keys selected when the user presses Enter; they're marked `*`
@@ -464,10 +486,13 @@ $ports = Read-Choice -Title "Ports to open" -Prompt "Ports" -Options @(Get-Firew
 if ($null -eq $ports) { return }   # Q
 ```
 
-### `Read-YesNo` and `Read-SecretInput` (`Messages/Prompts.ps1`)
+### `Read-YesNo`, `Read-HostAddress` and `Read-SecretInput` (`Messages/Prompts.ps1`)
 
 - **`Read-YesNo -Message "Continue? (y/n) "`** loops until the answer is `y` or `n` and
   returns it. `-Force` returns `'y'` without asking.
+- **`Read-HostAddress -Prompt "Splunk server IP"`** asks until the answer is an IPv4
+  address, an IPv6 address or a host name (checked with `Test-HostAddress`). It is built
+  on `Read-Choice -AllowCustom`.
 - **`Read-SecretInput "Enter seed phrase: "`** reads masked input and returns plain text.
   It's used for the Zulu seed and account passwords.
 
@@ -482,6 +507,7 @@ if ($null -eq $ports) { return }   # Q
 | `Get-FileFromUrl -Url -OutputPath` | `Helpers/` | Downloads over TLS 1.2 with the progress bar hidden; returns `$true` / `$false` |
 | `New-Password` / `ConvertTo-WordIndex` | `Helpers/` | Zulu's deterministic passwords: MD5 of seed + username, mapped onto `wordlist.txt`. **Don't change the algorithm or the wordlist.** Teammates regenerate the same passwords on other machines |
 | `Test-IsAdministrator` | `Helpers/` | Whether the session is elevated |
+| `Test-HostAddress -Address` | `Helpers/` | Whether a string is a full IPv4 address, an IPv6 address or a host name. Stricter than `[ipaddress]::TryParse`, which accepts `"10"` |
 | `Test-Prerequisites` | `Helpers/` | Pre-flight: admin (throws if not), OS and PowerShell version (warnings) |
 | `Get-FirewallPortOptions [-IsDC]` | `Network/` | The suggested scored and AD ports as `Read-Choice` options; `-IsDC` marks the AD ports as defaults |
 | `Get-FirewallPortDescription -Port` | `Network/Add-FirewallPort.ps1` | Port name from `ports.json`, with a fallback (internal) |

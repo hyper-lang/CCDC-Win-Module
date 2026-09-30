@@ -3,7 +3,7 @@ function Remove-RDPUsers {
     param()
 
     Invoke-HardeningOperation -OperationName "Remove RDP Users" -ScriptBlock {
-        Write-Host "Removing all users from Remote Desktop Users group..." -ForegroundColor Cyan
+        Write-Status "Removing all users from Remote Desktop Users group"
         $ExclusionList = @("ccdcuser1", "ccdcuser2")
         $isDC = $script:HardeningContext.OS.IsDomainController
 

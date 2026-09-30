@@ -16,7 +16,6 @@ function Protect-Mimikatz {
 
         Set-RegistryValue -Path $registryPath -Name "UseLogonCredential" -Value 0 -PropertyType "DWord" -OperationName "Patch Mimikatz" -CreatePathIfMissing
 
-        Write-Host "Mimikatz (WDigest) patch applied successfully" -ForegroundColor Green
-        Write-Status -Level Success "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
+        Write-Status -Level Warning "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
     }
 }

@@ -59,9 +59,9 @@ function Set-ZuluPassword {
             $WordlistFile = Join-Path $script:DataPath "wordlist.txt"
             $ExcludedUsers = @("Administrator", "ccdcuser1", "ccdcuser2", "ccdcuser3")
 
-            Write-Host "Starting Zulu Password Generator Script..." -ForegroundColor Green
+            Write-Status "Starting Zulu password generator"
             Write-ZuluLog -Message "Script started at $(Get-Date)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
-            Write-Host "The default behavior is to change passwords for all users except: $($ExcludedUsers -join ', ')."
+            Write-Status "Users excluded from rotation: $($ExcludedUsers -join ', ')"
 
             # Generating passwords needs no admin rights; changing them does.
             if (-not $GenerateOnly) {
@@ -70,16 +70,14 @@ function Set-ZuluPassword {
 
             $IsDomainController = (Get-OperatingSystemInfo).IsDomainController
             if ($IsDomainController) {
-                Write-Host "Domain Controller detected - AD password operations will be used." -ForegroundColor Green
+                Write-Status "Domain Controller detected - AD password operations will be used"
             }
 
-            Write-Host "`nPreparing to generate passwords..."
 
             # Salt phrase: -SaltPhrase if given (non-interactive), otherwise prompt.
             $seedFromPrompt = $false
             if ($SaltPhrase) {
                 if ($SaltPhrase.Length -lt 8) {
-                    Write-Host "Salt phrase must be at least 8 characters long." -ForegroundColor Red
                     throw "Salt phrase must be at least 8 characters long."
                 }
                 $seedPhrase = $SaltPhrase
@@ -90,11 +88,11 @@ function Set-ZuluPassword {
                     $confirmSeedPhrase = Read-SecretInput "Confirm seed phrase: "
 
                     if ($seedPhrase -ne $confirmSeedPhrase) {
-                        Write-Host "Seed phrases do not match. Please retry." -ForegroundColor Yellow
+                        Write-Status -Level Warning "Seed phrases do not match. Please retry." -NoLog
                         continue
                     }
                     if ($seedPhrase.Length -lt 8) {
-                        Write-Host "Seed phrase must be at least 8 characters long. Please retry." -ForegroundColor Yellow
+                        Write-Status -Level Warning "Seed phrase must be at least 8 characters long. Please retry." -NoLog
                         continue
                     }
                     break
@@ -102,7 +100,7 @@ function Set-ZuluPassword {
             }
 
             if (-not (Test-Path $WordlistFile)) {
-                Write-Host "Downloading wordlist file..." -ForegroundColor Green
+                Write-Status "Downloading wordlist from $WordlistUrl"
                 if (-not (Get-FileFromUrl -Url $WordlistUrl -OutputPath $WordlistFile)) {
                     throw "Failed to download wordlist from $WordlistUrl"
                 }
@@ -111,7 +109,7 @@ function Set-ZuluPassword {
 
             $setupFailures = 0
             if ($Initial) {
-                Write-Host "Performing initial user setup..." -ForegroundColor Green
+                Write-Status "Performing initial user setup (Administrator + competition accounts)"
                 # A salt given via -SaltPhrase also derives the initial account passwords (needed for
                 # non-interactive runs, where Read-Host fails). A typed seed means someone is at the
                 # keyboard, so those passwords are entered by hand instead.
@@ -129,7 +127,7 @@ function Set-ZuluPassword {
 
             $rawUsers = if ($User) { @($User) }
                         elseif ($UsersFile) {
-                            if (-not (Test-Path $UsersFile)) { Write-Host "Users file '$UsersFile' not found." -ForegroundColor Red; throw "Users file not found: $UsersFile" }
+                            if (-not (Test-Path $UsersFile)) { throw "Users file not found: $UsersFile" }
                             Get-Content $UsersFile
                         }
                         elseif ($IsDomainController) {
@@ -141,7 +139,7 @@ function Set-ZuluPassword {
 
             $users = $rawUsers | Where-Object { $_ -notin $ExcludedUsers }
 
-            Write-Host "Generating passwords for $($users.Count) users..." -ForegroundColor Green
+            Write-Status "Generating passwords for $(@($users).Count) user(s)"
 
             $failedUsers = 0
 
@@ -154,23 +152,23 @@ function Set-ZuluPassword {
                 $password = New-Password -Username $username -SeedPhrase $seedPhrase -WordlistData $wordlistData
 
                 if (-not $GenerateOnly) {
-                    Write-Host "Changing password for user $username..."
                     try {
                         Set-UserPassword -Username $username -Password $password
                         if ($IsDomainController) {
-                            Write-Host "Successfully changed AD password for ${username}." -ForegroundColor Green
+                            Write-Status -Level Success "Changed AD password for ${username}"
                             Write-ZuluLog -Message "Successfully changed AD password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
                         } else {
-                            Write-Host "Successfully changed password for ${username}." -ForegroundColor Green
+                            Write-Status -Level Success "Changed password for ${username}"
                             Write-ZuluLog -Message "Successfully changed password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
                         }
                         Add-Content -Path $ExportUsersFile -Value $username
                     } catch {
                         $failedUsers++
-                        Write-Host "Failed to change password for ${username}. $($_.Exception.Message)" -ForegroundColor Red
+                        Write-Status -Level Error "Failed to change password for ${username}: $($_.Exception.Message)"
                         Write-ZuluLog -Message "Failed to change password for ${username}.: $($_.Exception.Message)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
                     }
                 } elseif (-not $PCRFile) {
+                    # Screen only: generated passwords must never reach the log file.
                     Write-Host "Generated password for user '${username}': ${password}"
                 }
 
@@ -188,7 +186,7 @@ function Set-ZuluPassword {
             }
 
             Write-Host "`nDone!" -ForegroundColor Green
-            Write-Host "PLEASE REMEMBER TO CHANGE THE ADMINISTRATOR PASSWORD IF NOT DONE EARLIER." -ForegroundColor Yellow
+            Write-Status -Level Warning "Remember to change the Administrator password if not done earlier"
 
             # Fail the "Zulu Passwords" operation (after every user was attempted) so the run
             # summary counts it; the per-user details are in the log and zulu.log.

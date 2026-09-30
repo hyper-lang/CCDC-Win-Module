@@ -91,6 +91,11 @@
         Write-Status "Additional firewall ports: $($extraPorts -join ', ')"
     }
 
+    # Check -SplunkIP now, so a typo fails before hardening starts rather than at step 4.
+    if ($SplunkIP -and -not (Test-HostAddress ($SplunkIP -replace ':\d+$', ''))) {
+        throw "Invalid -SplunkIP '$SplunkIP': not an IP address or host name"
+    }
+
     # $global:Error: inside a module, $Error is a separate module-scoped (empty) collection.
     $errorCountAtStart = $global:Error.Count
 
@@ -102,19 +107,17 @@
 
     $osInfo = $script:HardeningContext.OS
     if ($osInfo) {
-        Write-Host "`nDetected Operating System:" -ForegroundColor Yellow
-        Write-Host "  OS Version: $($osInfo.OSVersion)" -ForegroundColor White
-        Write-Host "  Build Number: $($osInfo.BuildNumber)" -ForegroundColor White
-        Write-Host "  Edition: $($osInfo.Edition)" -ForegroundColor White
-        Write-Host "  Is Server: $($osInfo.IsServer)" -ForegroundColor White
-        Write-Host "  Is Server Core: $($osInfo.IsServerCore)" -ForegroundColor White
-        Write-Host ""
+        Write-Banner "Detected Operating System" -Color Yellow -Body @(
+            "OS Version: $($osInfo.OSVersion)"
+            "Build Number: $($osInfo.BuildNumber)"
+            "Edition: $($osInfo.Edition)"
+            "Is Server: $($osInfo.IsServer)"
+            "Is Server Core: $($osInfo.IsServerCore)"
+        )
     } else {
         Write-Host ""
         Write-Status -Level Error "Failed to detect operating system."
-        Write-Host "The script may not function correctly. Continue anyway? (y/n)" -ForegroundColor Yellow
-        $continue = Read-Host
-        if ($continue -ne "y") {
+        if ((Read-YesNo -Message "The script may not function correctly. Continue anyway? (y/n) ") -ne 'y') {
             throw "OS detection failed. Script aborted by user."
         }
     }
@@ -146,32 +149,33 @@
         Write-Status "RDP group reset and RDP disable will be skipped (-srdp)"
     }
 
-    Write-Host "`nStep 1/5: Hardening users and credentials..." -ForegroundColor Cyan
+    Write-Banner "Step 1/5: Hardening users and credentials" -Style Inline -Log
     Invoke-UserHardening -SkipPasswordChange:$SkipPasswordChange -SkipRDP:$SkipRDP -SaltPhrase $SaltPhrase
 
-    Write-Host "`nStep 2/5: Hardening services (SMB + unused network protocols)..." -ForegroundColor Cyan
+    Write-Banner "Step 2/5: Hardening services (SMB + unused network protocols)" -Style Inline -Log
     Invoke-ServiceHardening
 
-    Write-Host "`nStep 3/5: Hardening network and remote access..." -ForegroundColor Cyan
+    Write-Banner "Step 3/5: Hardening network and remote access" -Style Inline -Log
     Invoke-NetworkHardening -NonInteractive -Prompt:$Prompt -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
 
-    Write-Host "`nStep 4/5: Configuring Splunk..." -ForegroundColor Cyan
+    Write-Banner "Step 4/5: Configuring Splunk" -Style Inline -Log
     if ($SkipSplunk) {
         Write-Status -Level Skip "Splunk configuration skipped (-SkipSplunk)" -LogMessage "Splunk configuration skipped per -SkipSplunk"
     } else {
         if ([string]::IsNullOrEmpty($SplunkIP)) {
-            $SplunkIP = Read-Host "`nInput IP address of Splunk Server"
+            $SplunkIP = Read-HostAddress -Prompt "Splunk server IP"
         }
         Install-Splunk -IP $SplunkIP
     }
 
-    Write-Host "`nStep 5/5: Setting Execution Policy to Restricted..." -ForegroundColor Cyan
+    Write-Banner "Step 5/5: Setting Execution Policy to Restricted" -Style Inline -Log
     Set-RestrictedExecutionPolicy
 
-    Write-Host "`nAll sections applied. Next: enable Windows Defender, then run Windows Updates." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Status -Level Warning "All sections applied. Next: enable Windows Defender, then run Windows Updates."
 
     # -- Final summary -------------------------------------------------------
-    Write-Host "`n***Script Completed!!!***" -ForegroundColor Green
+    Write-Banner "Script Completed" -Style Inline -Color Green -Log
     Show-OperationSummary
 
     # $Error is newest-first, so this run's errors are the first (new count) entries

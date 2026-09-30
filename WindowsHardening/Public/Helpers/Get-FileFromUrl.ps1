@@ -8,14 +8,14 @@ function Get-FileFromUrl {
         [string]$OutputPath
     )
     try {
-        Write-Host "Downloading from $Url..." -ForegroundColor Green
+        Write-Status "Downloading $Url"
         $ProgressPreference = 'SilentlyContinue'
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $Url -OutFile $OutputPath -UseBasicParsing
         $ProgressPreference = 'Continue'
         $true
     } catch {
-        Write-Host "Failed to download file from $Url`nError: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Status -Level Error "Failed to download $Url : $($_.Exception.Message)"
         $false
     }
 }

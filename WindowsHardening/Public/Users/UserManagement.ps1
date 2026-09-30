@@ -138,7 +138,7 @@ function Initialize-CompetitionUsers {
 
     $passwordArgs = @{ WordlistData = $WordlistData; SaltPhrase = $SaltPhrase }
 
-    Write-Host "Changing Administrator password..." -ForegroundColor Green
+    Write-Status "Changing Administrator password"
     try {
         Set-UserPassword -Username "Administrator" -PasswordPrompt "Enter new password for Administrator: " @passwordArgs
     } catch {
@@ -151,7 +151,7 @@ function Initialize-CompetitionUsers {
         # Lookups use -Filter: Get-ADUser -Identity throws for a missing user even with
         # -ErrorAction SilentlyContinue. New-ADUser without a password creates a disabled
         # account, so each user is enabled once its password is set.
-        Write-Host "`nCreating domain users ccdcuser2 and ccdcuser3..."
+        Write-Status "Setting up domain users ccdcuser2 and ccdcuser3"
         foreach ($u in @("ccdcuser2", "ccdcuser3")) {
             try {
                 if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
@@ -159,21 +159,21 @@ function Initialize-CompetitionUsers {
                 }
                 Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser3") @passwordArgs
                 Enable-ADAccount -Identity $u -ErrorAction Stop
-                Write-Status -Level Success "$u ready" -LogOnly
+                Write-Status -Level Success "$u ready"
             } catch {
                 $failed++
                 Write-Status -Level Warning "Domain user '$u' not set up: $($_.Exception.Message)" -LogMessage "Domain user '$u' setup failed: $($_.Exception.Message)"
             }
         }
     } else {
-        Write-Host "`nCreating ccdcuser1 and ccdcuser2..."
+        Write-Status "Setting up local users ccdcuser1 and ccdcuser2"
         foreach ($u in @("ccdcuser1", "ccdcuser2")) {
             try {
                 if (-not (Get-LocalUser -Name $u -ErrorAction Ignore)) {
                     New-LocalUser -Name $u -NoPassword -ErrorAction Stop | Out-Null
                 }
                 Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq "ccdcuser1") @passwordArgs
-                Write-Status -Level Success "$u ready" -LogOnly
+                Write-Status -Level Success "$u ready"
             } catch {
                 $failed++
                 Write-Status -Level Warning "Local user '$u' not set up: $($_.Exception.Message)" -LogMessage "Local user '$u' setup failed: $($_.Exception.Message)"

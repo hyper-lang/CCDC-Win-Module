@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 
-# Prompts.ps1 - Interactive prompts: yes/no, comma-separated lists, hidden input.
+# Prompts.ps1 - Interactive prompts: yes/no, IP address or host name, hidden input.
 
 function Read-YesNo {
     [CmdletBinding()]
@@ -28,6 +28,26 @@ function Read-YesNo {
     } catch {
         Write-Status -Level Error "Error in Read-YesNo: $($_.Exception.Message)"
         return "n"
+    }
+}
+
+function Read-HostAddress {
+    <#
+    .SYNOPSIS
+        Prompts for an IP address or host name; asks again until Test-HostAddress accepts it.
+    .EXAMPLE
+        $ip = Read-HostAddress -Prompt "Splunk server IP"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Prompt
+    )
+
+    Read-Choice -Prompt $Prompt -AllowCustom -ValidateCustom {
+        param($value)
+        if (-not (Test-HostAddress $value)) { throw "not a valid IP address or host name" }
+        $value
     }
 }
 

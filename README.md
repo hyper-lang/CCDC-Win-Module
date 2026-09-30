@@ -83,12 +83,13 @@ WindowsHardening/
 │   ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
 │   ├── Patching/    Install-EternalBluePatch
 │   ├── Messages/    Write-Status, Show-OperationSummary, Start-HardeningLog, Write-Banner,
-│   │                Read-Choice, Read-YesNo, Read-SecretInput
+│   │                Read-Choice, Read-YesNo, Read-HostAddress, Read-SecretInput
 │   ├── Helpers/     One file per function, named after it: Initialize-System,
 │   │                Initialize-Context, Get-HardeningContext, Test-Prerequisites,
-│   │                Test-IsAdministrator, Test-IsDomainController, Get-OperatingSystemInfo,
-│   │                Invoke-HardeningOperation, ConvertTo-PortList, Set-RegistryValue,
-│   │                Get-FileFromUrl, Show-Users, New-Password, ConvertTo-WordIndex
+│   │                Test-IsAdministrator, Test-IsDomainController, Test-HostAddress,
+│   │                Get-OperatingSystemInfo, Invoke-HardeningOperation, ConvertTo-PortList,
+│   │                Set-RegistryValue, Get-FileFromUrl, Show-Users, New-Password,
+│   │                ConvertTo-WordIndex
 │   └── Inject/      Reserved for inject-specific functions (empty for now)
 ├── Data/            ports.json, patchURLs.json, wordlist.txt
 └── Dev/             Experimental: Backup-WindowsState, Restore-WindowsState + helpers
@@ -241,10 +242,22 @@ Invoke-HardeningMenu -Force -Selection 16
 
 ### `Invoke-HardeningMenu`
 
-The interactive menu: pick a section (options 2-4) or a single step (5-18);
-option 1 runs `Invoke-WindowsHardening` (all sections, new log file). Loops until
-`Q`. Requires an elevated session. With `-Force -Selection`, runs one option and
-returns.
+The interactive menu. The main screen lists the sections with their option
+numbers; a section letter opens that section's options:
+
+| Letter | Section | Options |
+|---|---|---|
+| — | Harden Everything (`Invoke-WindowsHardening`, new log file) | 1 |
+| `U` | Users & Credentials | 2 (run all), 5-10 |
+| `N` | Network & Remote Access | 3 (run all), 11, 12, 19 |
+| `S` | Services | 4 (run all), 13, 14 |
+| `L` | Logging & Patching | 15-18 |
+| — | Re-run setup / execution summary | A / 0 |
+
+Option numbers can be typed from any screen, several at once (`9,10,13` or
+`13-15`), and run in the order typed. `Q` goes back from a section and quits from
+the main screen. Requires an elevated session. With `-Force -Selection`, runs one
+option and returns.
 
 ```powershell
 # Interactive
