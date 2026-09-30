@@ -8,8 +8,8 @@
 
           1. Invoke-UserHardening          - admin removal, Zulu password rotation, RDP group
                                              reset, WDigest credential hardening
-          2. Invoke-ServiceHardening       - SMB + unused network protocols
-          3. Invoke-NetworkHardening       - firewall, remote-management teardown
+          2. Invoke-NetworkHardening       - firewall, remote-management teardown
+          3. Invoke-ServiceHardening       - SMB + unused network protocols
           4. Install-Splunk                - unless -SkipSplunk
           5. Set-RestrictedExecutionPolicy - machine-wide Restricted
 
@@ -157,7 +157,7 @@
     }
 
     # -- RDP: ask once, up front ---------------------------------------------
-    # The answer is needed before step 1 (RDP group reset) and step 3 (RDP disable).
+    # The answer is needed before step 1 (RDP group reset) and step 2 (RDP disable).
     # "No" means the same as -SkipRDP: RDP stays enabled and its group is not reset.
     if (-not $SkipRDP -and -not $DisableRDP) {
         if ($NoPrompt) {
@@ -190,11 +190,11 @@
     Write-Banner "Step 1/5: Hardening users and credentials" -Style Inline -Log
     Invoke-UserHardening -SkipPasswordChange:$SkipPasswordChange -SkipRDP:$SkipRDP -SaltPhrase $SaltPhrase
 
-    Write-Banner "Step 2/5: Hardening services (SMB + unused network protocols)" -Style Inline -Log
-    Invoke-ServiceHardening
-
-    Write-Banner "Step 3/5: Hardening network and remote access" -Style Inline -Log
+    Write-Banner "Step 2/5: Hardening network and remote access" -Style Inline -Log
     Invoke-NetworkHardening -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
+
+    Write-Banner "Step 3/5: Hardening services (SMB + unused network protocols)" -Style Inline -Log
+    Invoke-ServiceHardening
 
     Write-Banner "Step 4/5: Configuring Splunk" -Style Inline -Log
     if ($SkipSplunk) {
