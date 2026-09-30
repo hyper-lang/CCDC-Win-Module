@@ -122,11 +122,14 @@ There are two entry points:
 ```powershell
 Import-Module ./WindowsHardening -Force
 
-# Full run, no prompts (DC vs. member/workstation is auto-detected)
+# Full run (DC vs. member/workstation is auto-detected); asks only for extra firewall ports
 Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
 
-# Same, but keep WinRM reachable (e.g. applied over a remote session)
-Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -PreserveManagementPort
+# Full run, no prompts at all
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -NoPrompt
+
+# Keep WinRM reachable (e.g. applied over a remote session)
+Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -NoPrompt -PreserveManagementPort
 
 # Skip password change and RDP-user reset
 Invoke-WindowsHardening -SkipPasswordChange -SkipRDP -SkipSplunk
@@ -135,8 +138,12 @@ Invoke-WindowsHardening -SkipPasswordChange -SkipRDP -SkipSplunk
 Invoke-HardeningMenu
 ```
 
-`Invoke-WindowsHardening` prompts only for values you do not pass: the Zulu salt
+`Invoke-WindowsHardening` prompts for values you do not pass: the Zulu salt
 phrase (`-SaltPhrase`) and the Splunk server IP (`-SplunkIP`, or `-SkipSplunk`).
+Before hardening starts it asks whether to disable RDP (`-DisableRDP` or `-SkipRDP`
+answers in advance). At the firewall step it keeps the default ports (plus
+`-FirewallPorts` / `-AdditionalPorts`) and asks for extra ones. `-NoPrompt` skips
+both questions and disables RDP unless `-SkipRDP` is given.
 
 Optionally take a backup first (experimental):
 
@@ -285,7 +292,8 @@ Invoke-WindowsHardening -FirewallPorts "80, 443" -SaltPhrase "a long passphrase"
 ```
 
 Without `-FirewallPorts`, a domain controller gets the common AD ports and any
-other machine gets Deny All Inbound only. WinRM is disabled (by
+other machine gets Deny All Inbound only; either way the run then asks for extra
+ports to allow, unless `-NoPrompt` is given. WinRM is disabled (by
 `Remove-RemoteManagement`) unless `-PreserveManagementPort` is given. The
 execution policy is set to Restricted machine-wide, so new sessions need
 `-ExecutionPolicy Bypass` to load the module afterwards.
@@ -434,10 +442,11 @@ Commonly used parameters and their short aliases:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `-SkipPasswordChange` / `-sp` | switch | `$false` | Skip Zulu account creation and password rotation |
-| `-SkipRDP` / `-srdp` | switch | `$false` | Skip the RDP group reset and leave RDP enabled |
+| `-SkipRDP` / `-srdp` | switch | `$false` | Keep RDP enabled and skip the RDP group reset, without asking |
+| `-DisableRDP` / `-drdp` | switch | `$false` | Disable RDP and reset the RDP group, without asking. With neither RDP switch, the run asks up front |
 | `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
 | `-AdditionalPorts` / `-ap` | string[] | — | Extra ports allowed on top of `-FirewallPorts` or the defaults |
-| `-Prompt` | switch | `$false` | At the firewall step, keep the default ports and ask for extra ports |
+| `-NoPrompt` | switch | `$false` | Don't ask whether to disable RDP (it is disabled unless `-SkipRDP`) or for extra firewall ports (by default the firewall step keeps the default ports, then asks for extra ones) |
 | `-SaltPhrase` / `-s` | string | — | Salt phrase for Zulu passwords (else Zulu prompts) |
 | `-LogPath` | string | `C:\Windows\Logs\Hardening` | Log output directory |
 | `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled) |

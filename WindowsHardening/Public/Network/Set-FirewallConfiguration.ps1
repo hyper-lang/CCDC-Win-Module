@@ -125,9 +125,16 @@ function Set-FirewallConfiguration {
                     Write-Status "Already allowed: $($alreadyAllowed -join ', ')"
                 }
                 $extraOptions = @(Get-FirewallPortOptions | Where-Object { $alreadyAllowed -notcontains $_.Value })
-                $promptedPorts = Read-Choice -Title "Additional Firewall Ports" -Prompt "Extra ports to allow" -Options $extraOptions `
-                    -Multiple -AllowCustom -AllowEmpty `
-                    -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
+                try {
+                    $promptedPorts = Read-Choice -Title "Additional Firewall Ports" -Prompt "Extra ports to allow" -Options $extraOptions `
+                        -Multiple -AllowCustom -AllowEmpty `
+                        -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
+                } catch {
+                    # No console (e.g. over WinRM): still apply the firewall, just without extras.
+                    $promptedPorts = @()
+                    Write-Status -Level Warning "Cannot ask for extra ports in this session; using the ports above only (pass -NoPrompt to skip the question)" `
+                        -LogMessage "Extra-port prompt unavailable: $($_.Exception.Message)"
+                }
             }
 
             # Add-on ports; also validates, de-duplicates, and drops blank prompt entries

@@ -323,17 +323,21 @@ Write-Status -Tag Services "Done." -LogMessage "Invoke-ServiceHardening complete
 3. Shows the OS and AD status, then runs `Test-Prerequisites`, which throws if the
    session isn't elevated.
 4. Runs the three section orchestrators, then Splunk, then the execution policy.
-   `Invoke-NetworkHardening` always gets `-NonInteractive`, and `-Prompt` is passed
-   through.
+   `Invoke-NetworkHardening` always gets `-NonInteractive`, plus `-Prompt` unless
+   `-NoPrompt` was given.
 5. Shows the summary with `Show-OperationSummary`, appends this run's new
    `$global:Error` entries to `Desktop\hard.txt`, and prints the overall result.
 
 `Set-RestrictedExecutionPolicy` sets the **LocalMachine** policy. The current session
 keeps its Process-scope `Bypass`, so it runs last, and later sessions get `Restricted`.
 
-**Prompts in a full run.** A full run only prompts for what wasn't passed: the Zulu salt
-(`-SaltPhrase`), the Splunk IP (`-SplunkIP` / `-SkipSplunk`) and, with `-Prompt`, extra
-firewall ports. Keep it that way. Over WinRM there is no console, and `Read-Host` throws.
+**Prompts in a full run.** A full run prompts for what wasn't passed: the Zulu salt
+(`-SaltPhrase`) and the Splunk IP (`-SplunkIP` / `-SkipSplunk`). Unless `-NoPrompt` is
+given, it also asks up front whether to disable RDP (`-DisableRDP` / `-SkipRDP` answer in
+advance) and, at the firewall step, for extra firewall ports. Over WinRM there is no
+console, and `Read-Host` throws. Both questions catch that: RDP is disabled, and the
+firewall continues with the default ports. Anything new that prompts needs a parameter
+that bypasses it.
 
 ---
 

@@ -16,22 +16,30 @@
         Each step is wrapped in Invoke-HardeningOperation, so one failure is counted and
         reported without stopping the rest. Ends with the operation summary.
 
-        Prompts only for what is not passed: the Zulu salt phrase (-SaltPhrase) and the
-        Splunk server IP (-SplunkIP or -SkipSplunk). To pick individual steps instead,
-        use Invoke-HardeningMenu.
+        Prompts for what is not passed: the Zulu salt phrase (-SaltPhrase) and the Splunk
+        server IP (-SplunkIP or -SkipSplunk). Before hardening starts it asks whether to
+        disable RDP (unless -DisableRDP or -SkipRDP says), and at the firewall step it asks
+        for extra ports to allow; -NoPrompt skips both questions. To pick individual steps instead, use
+        Invoke-HardeningMenu.
     .PARAMETER SkipPasswordChange
         Skip Zulu account creation and password rotation. Alias: -sp.
     .PARAMETER SkipRDP
-        Skip the RDP group reset and leave RDP enabled. Alias: -srdp.
+        Leave RDP enabled and skip the RDP group reset, without asking. Alias: -srdp.
+    .PARAMETER DisableRDP
+        Disable RDP and reset the RDP group, without asking. Alias: -drdp. With neither
+        this nor -SkipRDP, the run asks up front; with -NoPrompt (or in a session that
+        cannot prompt) it disables RDP.
     .PARAMETER FirewallPorts
         Ports to allow ("80, 443", @("80","443"), or 80,443). If omitted, a domain
         controller gets the common AD ports and any other machine gets Deny All only. Alias: -f.
     .PARAMETER AdditionalPorts
         Extra ports to allow on top of -FirewallPorts or the defaults above - e.g. a database
         or web port the box needs. Same formats as -FirewallPorts. Alias: -ap.
-    .PARAMETER Prompt
-        At the firewall step, keep the default ports (or -FirewallPorts / -AdditionalPorts)
-        and then ask for extra ports to allow on top of them.
+    .PARAMETER NoPrompt
+        Don't ask whether to disable RDP (it is disabled unless -SkipRDP) or for extra
+        firewall ports (only the defaults, -FirewallPorts, and -AdditionalPorts are used). Without it, the firewall step keeps those ports and then asks
+        for extra ones. In a session that cannot prompt (e.g. over WinRM), the question is
+        skipped with a warning.
     .PARAMETER SaltPhrase
         Salt phrase for Zulu password generation. If omitted, Zulu prompts for it. Alias: -s.
     .PARAMETER LogPath
@@ -44,7 +52,7 @@
     .PARAMETER SkipSplunk
         Skip the Splunk installation step (no prompt).
     .EXAMPLE
-        Invoke-WindowsHardening -SaltPhrase 'a long passphrase' -SkipSplunk
+        Invoke-WindowsHardening -SaltPhrase 'a long passphrase' -SkipSplunk -NoPrompt
         # Full run with no prompts.
     #>
     [CmdletBinding()]
@@ -56,13 +64,16 @@
         [Alias("srdp")]
         [switch]$SkipRDP,
 
+        [Alias("drdp")]
+        [switch]$DisableRDP,
+
         [Alias("f")]
         [string[]]$FirewallPorts,
 
         [Alias("ap")]
         [string[]]$AdditionalPorts,
 
-        [switch]$Prompt,
+        [switch]$NoPrompt,
 
         [Alias("s")]
         [string]$SaltPhrase,
@@ -75,6 +86,10 @@
 
         [switch]$SkipSplunk
     )
+
+    if ($SkipRDP -and $DisableRDP) {
+        throw "-SkipRDP and -DisableRDP cannot be used together"
+    }
 
     # -- FirewallPorts parsing ----------------------------------------------
     try {
@@ -141,12 +156,35 @@
         throw "Pre-flight checks failed: $($_.Exception.Message)"
     }
 
+    # -- RDP: ask once, up front ---------------------------------------------
+    # The answer is needed before step 1 (RDP group reset) and step 3 (RDP disable).
+    # "No" means the same as -SkipRDP: RDP stays enabled and its group is not reset.
+    if (-not $SkipRDP -and -not $DisableRDP) {
+        if ($NoPrompt) {
+            Write-Status "RDP will be disabled (-NoPrompt; pass -SkipRDP to keep it)"
+        } else {
+            Write-Host ""
+            Write-Status -Level Warning "Disabling RDP ends any RDP session to this machine, including yours." -NoLog
+            try {
+                $rdpChoice = Read-Choice -Prompt "Disable RDP on this machine?" -Default 'Y' -Options @(
+                    @{ Key = 'Y'; Label = 'Yes - disable RDP and reset the Remote Desktop Users group'; Value = 'disable' }
+                    @{ Key = 'N'; Label = 'No  - keep RDP enabled and leave the group as is (same as -SkipRDP)'; Value = 'keep' }
+                )
+                $SkipRDP = $rdpChoice -eq 'keep'
+            } catch {
+                Write-Status -Level Warning "Cannot ask in this session; RDP will be disabled (pass -SkipRDP to keep it)" `
+                    -LogMessage "RDP prompt unavailable: $($_.Exception.Message)"
+            }
+            Write-Status "RDP will be $(if ($SkipRDP) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly
+        }
+    }
+
     # -- Hardening sequence ---------------------------------------------------
     if ($SkipPasswordChange) {
         Write-Status "Password rotation will be skipped (-sp)"
     }
     if ($SkipRDP) {
-        Write-Status "RDP group reset and RDP disable will be skipped (-srdp)"
+        Write-Status "RDP group reset and RDP disable will be skipped (RDP stays enabled)"
     }
 
     Write-Banner "Step 1/5: Hardening users and credentials" -Style Inline -Log
@@ -156,7 +194,7 @@
     Invoke-ServiceHardening
 
     Write-Banner "Step 3/5: Hardening network and remote access" -Style Inline -Log
-    Invoke-NetworkHardening -NonInteractive -Prompt:$Prompt -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
+    Invoke-NetworkHardening -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort -SkipRDP:$SkipRDP
 
     Write-Banner "Step 4/5: Configuring Splunk" -Style Inline -Log
     if ($SkipSplunk) {
