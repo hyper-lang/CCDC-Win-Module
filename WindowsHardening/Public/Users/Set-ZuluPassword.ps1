@@ -26,7 +26,7 @@ function Set-ZuluPassword {
 
         if ($Help) {
             Write-Host "Usage: Set-ZuluPassword [options]" -ForegroundColor Green
-            Write-Host "Default behavior asks for a seed phrase and changes passwords for all auto-detected users minus excluded users."
+            Write-Host "Default behavior asks for a seed phrase and changes passwords for all auto-detected users minus excluded users." -ForegroundColor Green
             Write-Host "`nOptions:" -ForegroundColor Yellow
             @(
                 "  -Help, -h          Show this help message",
@@ -54,9 +54,11 @@ function Set-ZuluPassword {
             if (-not $GenerateOnly -and -not (Test-Path $OutputDirectory)) {
                 New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
             }
-            $ExportUsersFile = Join-Path $OutputDirectory "users_zulu.csv"
-            $LogFile = Join-Path $OutputDirectory "zulu.log"
-            $WordlistFile = Join-Path $script:DataPath "wordlist.txt"
+
+            # Use System.IO.Path::Combine to avoid Join-Path resolving PSDrive names ("C:\") on non-Windows
+            $ExportUsersFile = [System.IO.Path]::Combine($OutputDirectory, "users_zulu.csv")
+            $LogFile = [System.IO.Path]::Combine($OutputDirectory, "zulu.log")
+            $WordlistFile = [System.IO.Path]::Combine($script:DataPath, "wordlist.txt")
             $ExcludedUsers = @("Administrator", "ccdcuser1", "ccdcuser2", "ccdcuser3")
 
             Write-Status "Starting Zulu password generator"
