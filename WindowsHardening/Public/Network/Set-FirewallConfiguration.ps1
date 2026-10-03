@@ -15,7 +15,7 @@
     -AdditionalPorts are added on top of whichever set was chosen.
 
     -Prompt picks the base set the same way -NonInteractive does (-FirewallPorts, else the
-    AD ports on a DC), then asks for extra ports to allow on top of it.
+    AD ports on a DC), then asks for any additional ports to allow on top of it.
 
     Existing "Allow <Protocol> <Port>" rules from earlier runs are re-enabled instead of
     duplicated, and enabled Block rules that would override an Allow rule are reported.
@@ -34,9 +34,8 @@
     Never prompt (used by Invoke-WindowsHardening), unless -Prompt is also given.
 
 .PARAMETER Prompt
-    Keep the default ports (or -FirewallPorts), then ask which extra ports to allow. The
-    suggested scored/AD ports not already allowed are listed; unlisted ports can be typed;
-    Enter adds none.
+    Keep the default ports (or -FirewallPorts), then ask for any additional ports to allow.
+    Enter port numbers directly, separated by commas; Enter adds none.
 
 .PARAMETER PreserveManagementPort
     When set, creates Allow rules for TCP 5986 (WinRM-HTTPS) and TCP 5985
@@ -124,10 +123,10 @@ function Set-FirewallConfiguration {
                 if ($alreadyAllowed.Count -gt 0) {
                     Write-Status "Already allowed: $($alreadyAllowed -join ', ')"
                 }
-                $extraOptions = @(Get-FirewallPortOptions | Where-Object { $alreadyAllowed -notcontains $_.Value })
                 try {
-                    $promptedPorts = Read-Choice -Title "Additional Firewall Ports" -Prompt "Extra ports to allow" -Options $extraOptions `
+                    $promptedPorts = Read-Choice -Title "Additional Ports" -Prompt "Any additional ports to open" -Options @() `
                         -Multiple -AllowCustom -AllowEmpty `
+                        -Hint "enter port numbers separated by commas; Enter = none" `
                         -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
                 } catch {
                     # No console (e.g. over WinRM): still apply the firewall, just without extras.
