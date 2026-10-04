@@ -115,6 +115,94 @@ function Set-UserPassword {
     }
 }
 
+function Set-CompetitionInteractiveLogonRights {
+    <#
+    .SYNOPSIS
+        Allows specified AD users to sign in interactively at a domain controller.
+    .DESCRIPTION
+        User-rights assignments are stored as SIDs, not account names.  Export the
+        current USER_RIGHTS policy, add the requested account SIDs to
+        SeInteractiveLogonRight, remove them from SeDenyInteractiveLogonRight, and
+        import the policy while preserving unrelated entries.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Usernames
+    )
+
+    $sids = foreach ($username in $Usernames) {
+        $adUser = Get-ADUser -Identity $username -Properties SID -ErrorAction Stop
+        "*$($adUser.SID.Value)"
+    }
+
+    $tempRoot = [System.IO.Path]::GetTempPath()
+    $exportPath = Join-Path $tempRoot ("WindowsHardening-{0}.inf" -f ([guid]::NewGuid().ToString('N')))
+    $databasePath = Join-Path $tempRoot ("WindowsHardening-{0}.sdb" -f ([guid]::NewGuid().ToString('N')))
+
+    try {
+        & secedit.exe /export /cfg $exportPath /areas USER_RIGHTS /quiet | Out-Null
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $exportPath)) {
+            throw "secedit could not export the current user-rights policy (exit code $LASTEXITCODE)"
+        }
+
+        $policy = Get-Content -LiteralPath $exportPath -Raw -ErrorAction Stop
+        if ($policy -notmatch '(?im)^\[Privilege Rights\]\s*$') {
+            throw "The exported security policy does not contain a [Privilege Rights] section"
+        }
+
+        function Update-PrivilegeRight {
+            param(
+                [string]$Content,
+                [string]$Privilege,
+                [string[]]$AddSids,
+                [string[]]$RemoveSids
+            )
+
+            $linePattern = '(?im)^' + [regex]::Escape($Privilege) + '\s*=\s*(?<value>[^\r\n]*)$'
+            $match = [regex]::Match($Content, $linePattern)
+            $entries = @()
+            if ($match.Success -and $match.Groups['value'].Value.Trim()) {
+                $entries = @($match.Groups['value'].Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            }
+
+            foreach ($sid in $RemoveSids) {
+                $entries = @($entries | Where-Object { $_ -ne $sid })
+            }
+            foreach ($sid in $AddSids) {
+                if ($entries -notcontains $sid) {
+                    $entries += $sid
+                }
+            }
+
+            $replacement = "$Privilege = $($entries -join ',')"
+            if ($match.Success) {
+                return [regex]::Replace($Content, $linePattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            }
+
+            return [regex]::Replace(
+                $Content,
+                '(?im)^(\[Privilege Rights\]\s*)$',
+                [System.Text.RegularExpressions.MatchEvaluator]{ param($m) "$($m.Groups[1].Value)`r`n$replacement" }
+            )
+        }
+
+        $policy = Update-PrivilegeRight -Content $policy -Privilege 'SeDenyInteractiveLogonRight' -RemoveSids $sids -AddSids @()
+        $policy = Update-PrivilegeRight -Content $policy -Privilege 'SeInteractiveLogonRight' -AddSids $sids -RemoveSids @()
+        Set-Content -LiteralPath $exportPath -Value $policy -Encoding Unicode -Force -ErrorAction Stop
+
+        & secedit.exe /configure /db $databasePath /cfg $exportPath /areas USER_RIGHTS /quiet | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "secedit could not apply the updated user-rights policy (exit code $LASTEXITCODE)"
+        }
+
+        Write-Status -Level Success "Interactive console logon allowed for $($Usernames -join ', ')" `
+            -LogMessage "Granted SeInteractiveLogonRight to $($sids -join ', '); removed those SIDs from SeDenyInteractiveLogonRight"
+    } finally {
+        Remove-Item -LiteralPath $exportPath, $databasePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Initialize-CompetitionUsers {
     <#
     .SYNOPSIS
@@ -164,6 +252,14 @@ function Initialize-CompetitionUsers {
                 $failed++
                 Write-Status -Level Warning "Domain user '$u' not set up: $($_.Exception.Message)" -LogMessage "Domain user '$u' setup failed: $($_.Exception.Message)"
             }
+        }
+
+        try {
+            Set-CompetitionInteractiveLogonRights -Usernames @("ccdcuser2", "ccdcuser3")
+        } catch {
+            $failed++
+            Write-Status -Level Warning "Could not grant console sign-in rights to ccdcuser2/ccdcuser3: $($_.Exception.Message)" `
+                -LogMessage "Interactive logon rights setup failed: $($_.Exception.Message)"
         }
     } else {
         Write-Status "Setting up local users ccdcuser1 and ccdcuser2"
