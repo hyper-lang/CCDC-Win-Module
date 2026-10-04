@@ -198,10 +198,14 @@ function Set-ZuluPassword {
             }
 
             if ($writeLinuxGenerateCsv) {
+                $csvHeader = 'Username,Password'
                 if ($generatedRows.Count -gt 0) {
-                    $generatedRows | Export-Csv -LiteralPath $ExportUsersFile -NoTypeInformation -Encoding UTF8 -Force
+                    Set-Content -LiteralPath $ExportUsersFile -Value $csvHeader -Encoding UTF8 -Force
+                    foreach ($row in $generatedRows) {
+                        Add-Content -LiteralPath $ExportUsersFile -Value "$($row.Username),$($row.Password)" -Encoding UTF8
+                    }
                 } else {
-                    '"Username","Password"' | Set-Content -LiteralPath $ExportUsersFile -Encoding UTF8 -Force
+                    $csvHeader | Set-Content -LiteralPath $ExportUsersFile -Encoding UTF8 -Force
                 }
                 Write-Status "Generated password CSV: $ExportUsersFile" -LogMessage "Generated password CSV at $ExportUsersFile"
             }

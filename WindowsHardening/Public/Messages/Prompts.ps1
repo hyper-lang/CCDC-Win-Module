@@ -55,18 +55,11 @@ function Read-SecretInput {
     param([string]$Prompt)
     Write-Host -NoNewline $Prompt
 
-    # Read-Host -AsSecureString is reliable on Windows PowerShell, but its
-    # SecureString-to-BSTR conversion is not reliable on Unix PowerShell.  Zulu
-    # needs the actual seed text, so use normal terminal input on non-Windows.
-    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-        return (Read-Host)
-    }
-
+    # Read-Host masks input on both Windows PowerShell and Unix PowerShell.
+    # SecureStringToBSTR returns a BSTR; PtrToStringAuto can read only one
+    # character on some PowerShell 7 hosts, making every seed appear too short.
     $secure = Read-Host -AsSecureString
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    # SecureStringToBSTR returns a BSTR; PtrToStringAuto reads only one
-    # character in PowerShell 7 on some hosts, which makes every seed appear
-    # shorter than the minimum length.
     $input = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
     [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     $input
