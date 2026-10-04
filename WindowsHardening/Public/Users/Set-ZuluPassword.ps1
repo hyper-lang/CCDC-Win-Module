@@ -48,10 +48,18 @@ function Set-ZuluPassword {
         # rights or log, so it runs directly.
         $zulu = {
             # Script configuration
+            $isWindowsPlatform = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+            $writeLinuxGenerateCsv = $GenerateOnly -and -not $isWindowsPlatform
             if (-not $OutputDirectory) {
-                $OutputDirectory = if ($script:HardeningContext.LogPath) { $script:HardeningContext.LogPath } else { $script:DefaultLogPath }
+                $OutputDirectory = if ($writeLinuxGenerateCsv) {
+                    (Get-Location).Path
+                } elseif ($script:HardeningContext.LogPath) {
+                    $script:HardeningContext.LogPath
+                } else {
+                    $script:DefaultLogPath
+                }
             }
-            if (-not $GenerateOnly -and -not (Test-Path $OutputDirectory)) {
+            if ((-not $GenerateOnly -or $writeLinuxGenerateCsv) -and -not (Test-Path $OutputDirectory)) {
                 New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
             }
 
@@ -144,14 +152,24 @@ function Set-ZuluPassword {
             Write-Status "Generating passwords for $(@($users).Count) user(s)"
 
             $failedUsers = 0
+            $generatedRows = @()
 
-            if (-not $GenerateOnly) {
+            if (-not $GenerateOnly -or $writeLinuxGenerateCsv) {
                 Remove-Item $ExportUsersFile -ErrorAction Ignore
-                New-Item -ItemType File -Path $ExportUsersFile -Force | Out-Null
+                if (-not $writeLinuxGenerateCsv) {
+                    New-Item -ItemType File -Path $ExportUsersFile -Force | Out-Null
+                }
             }
 
             foreach ($username in $users) {
                 $password = New-Password -Username $username -SeedPhrase $seedPhrase -WordlistData $wordlistData
+
+                if ($writeLinuxGenerateCsv) {
+                    $generatedRows += [PSCustomObject]@{
+                        Username = $username
+                        Password = $password
+                    }
+                }
 
                 if (-not $GenerateOnly) {
                     try {
@@ -177,6 +195,15 @@ function Set-ZuluPassword {
                 if ($PCRFile) {
                     Add-Content -Path $PCRFile -Value "${username},${password}"
                 }
+            }
+
+            if ($writeLinuxGenerateCsv) {
+                if ($generatedRows.Count -gt 0) {
+                    $generatedRows | Export-Csv -LiteralPath $ExportUsersFile -NoTypeInformation -Encoding UTF8 -Force
+                } else {
+                    '"Username","Password"' | Set-Content -LiteralPath $ExportUsersFile -Encoding UTF8 -Force
+                }
+                Write-Status "Generated password CSV: $ExportUsersFile" -LogMessage "Generated password CSV at $ExportUsersFile"
             }
 
             if ($GenerateOnly) {

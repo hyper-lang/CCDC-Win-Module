@@ -448,6 +448,12 @@ Set-ZuluPassword -GenerateOnly -UsersFile "users.csv"
 Set-ZuluPassword -OutputDirectory "C:\zulu"
 ```
 
+On Linux, `-GenerateOnly` writes the generated `users_zulu.csv` to the current
+working directory by default. It contains `Username,Password` rows; pass
+`-OutputDirectory` to choose another location. Interactive seed prompts use
+normal terminal input on Linux for PowerShell compatibility, while Windows
+continues to use masked secure input.
+
 Parameter notes: `-SaltPhrase` (aliases `-s`, `-Seed`) sets the salt phrase;
 `Invoke-WindowsHardening -SaltPhrase` and `Invoke-HardeningMenu -SaltPhrase`
 pass it here. `-U`/`-u` both mean `-UsersFile` (PowerShell aliases
