@@ -18,4 +18,34 @@ function Protect-Mimikatz {
 
         Write-Status -Level Warning "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
     }
+        Invoke-HardeningOperation -OperationName "Audit SeDebugPrivilege" -ProgressMessage "Checking which users have the SeDebugPrivilege right" -ScriptBlock {
+        check-SeDebugPrivilege
+    }
+}
+
+# ToDo: recursivly check for nested groups
+function Check-SeDebugPrivilege {
+    $policyFile = Join-Path $env:TEMP "SeDebugAudit.inf"
+
+    try {
+        & secedit.exe /export /cfg $policyFile /areas USER_RIGHTS | Out-Null
+
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $policyFile)) {
+            throw "Failed to export security policy."
+        }
+
+        $results = Select-String -Path $policyFile -Pattern '^\s*SeDebugPrivilege\s*='
+
+        if ($results) {
+            Write-Host ($results | Out-String)
+            Write-Status -Level Warning "SeDebugPrivilege assignments found." `
+                -LogMessage ($results | Out-String)
+        }
+        else {
+            Write-Status "No SeDebugPrivilege assignments found."
+        }
+    }
+    finally {
+        Remove-Item $policyFile -ErrorAction SilentlyContinue
+    }
 }
