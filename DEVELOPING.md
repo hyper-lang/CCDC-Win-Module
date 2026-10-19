@@ -41,7 +41,7 @@ CCDC-Win-Module/
         ├── Users/       User & credential steps + Invoke-UserHardening (section orchestrator)
         ├── Network/     Firewall & remote access steps + Invoke-NetworkHardening
         ├── Services/    SMB, protocols, execution policy + Invoke-ServiceHardening
-        ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
+        ├── TH-IR/       Install-Splunk, Enable-AdvancedAuditing
         ├── Patching/    Install-EternalBluePatch
         ├── Messages/    Output and prompts: Write-Status, Write-Banner, Read-Choice, Log.ps1, ...
         ├── Helpers/     Shared plumbing, one function per file, file named after the function

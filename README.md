@@ -120,7 +120,7 @@ WindowsHardening/
 │   │                Get-FirewallPortOptions, Remove-RemoteManagement
 │   ├── Services/    Invoke-ServiceHardening, Mitigate-EternalBlue, Disable-UnusedNetworkProtocols,
 │   │                Set-RestrictedExecutionPolicy
-│   ├── SIEM/        Install-Splunk, Enable-AdvancedAuditing
+│   ├── TH-IR/       Install-Splunk, Enable-AdvancedAuditing
 │   ├── Patching/    Install-EternalBluePatch
 │   ├── Messages/    Write-Status, Show-OperationSummary, Start-HardeningLog, Write-Banner,
 │   │                Read-Choice, Read-YesNo, Read-HostAddress, Read-SecretInput

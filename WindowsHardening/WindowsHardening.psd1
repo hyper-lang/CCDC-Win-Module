@@ -40,7 +40,7 @@
         'Mitigate-EternalBlue'
         'Set-RestrictedExecutionPolicy'
 
-        # -- Public/SIEM/ -----------------------------------------------------
+        # -- Public/TH-IR/ ----------------------------------------------------
         'Install-Splunk'
         'Enable-AdvancedAuditing'
 
