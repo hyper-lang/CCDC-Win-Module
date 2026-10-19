@@ -6,7 +6,6 @@ function Set-ZuluPassword {
         # -U (and -u: aliases ignore case) mean -UsersFile, not -User.
         [Alias("U")][string]$UsersFile,
         [Alias("g")][switch]$GenerateOnly,
-        [Alias("p")][string]$PCRFile,
         [Alias("s", "Seed")][string]$SaltPhrase,
 
         [Parameter(HelpMessage = "If we need to download the wordlist, this is the URL to get it from")]
@@ -27,7 +26,6 @@ function Set-ZuluPassword {
                 "  -User              Change password for a single user",
                 "  -UsersFile, -U     Change passwords for newline-separated users in a file (-u also means this)",
                 "  -GenerateOnly, -g  Generate/print passwords only, do not change them",
-                "  -PCRFile, -p       Output generated passwords as 'username,password' to a PCR (CSV) file",
                 "  -SaltPhrase, -s    Salt phrase (non-interactive; skips prompt). Alias: -Seed",
                 "  -url <url>         The url to the wordlist (used only if Data\wordlist.txt is missing)",
                 "  -OutputDirectory   Where zulu.log / users_zulu.csv go (default: log directory)"
@@ -160,13 +158,9 @@ function Set-ZuluPassword {
                         Write-Status -Level Error "Failed to change password for ${username}: $($_.Exception.Message)"
                         Write-ZuluLog -Message "Failed to change password for ${username}.: $($_.Exception.Message)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
                     }
-                } elseif (-not $PCRFile) {
+                } else {
                     # Screen only: generated passwords must never reach the log file.
                     Write-Host "Generated password for user '${username}': ${password}"
-                }
-
-                if ($PCRFile) {
-                    Add-Content -Path $PCRFile -Value "${username},${password}"
                 }
             }
 

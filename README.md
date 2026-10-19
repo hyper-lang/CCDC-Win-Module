@@ -462,9 +462,8 @@ Set-ZuluPassword -OutputDirectory "C:\zulu"
 On Linux, `-GenerateOnly` writes the generated `users_zulu.csv` to the current
 working directory by default. It contains `Username,Password` rows; pass
 `-OutputDirectory` to choose another location. Both platforms mask the
-interactive seed prompt. Generated passwords are intentionally
-plaintext in this CSV, on the Windows generate-only console output, and in a
-file explicitly supplied with `-PCRFile`.
+interactive seed prompt. Generated passwords are intentionally plaintext in
+this CSV and on the Windows generate-only console output.
 
 `-GenerateOnly` does not run administrator pre-flight checks or require an
 elevated PowerShell session.
