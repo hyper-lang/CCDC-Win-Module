@@ -282,7 +282,7 @@ Invoke-WindowsHardening                 full run; new log; pre-flight checks; fi
 ├── Set-AdministratorPassword           unless -SkipPasswordChange
 ├── Remove-AdminUsers
 ├── Set-ZuluPassword                    existing eligible users; unless -SkipPasswordChange
-├── Set-FirewallConfiguration           step 4, before the RDP choice
+├── WinRM choice → Set-FirewallConfiguration step 4 (matching WinRM allow rules)
 ├── Mitigate-ZeroLogon
 ├── Mitigate-EternalBlue
 ├── RDP choice → Remove-RDPUsers / preserve group
@@ -335,10 +335,11 @@ Write-Status -Tag Services "Done." -LogMessage "Invoke-ServiceHardening complete
    the counters.
 3. Shows the OS and AD status, then runs `Test-Prerequisites`, which throws if the
    session isn't elevated.
-4. Runs the ordered leaf-function sequence shown above. Firewall configuration is step 4;
-   SMB hardening is step 6, and the RDP question follows it. The prompt asks whether RDP is
-   needed; Yes keeps it enabled and No disables it. `-NoPrompt` makes firewall
-   configuration use supplied/default ports and disables RDP unless `-SkipRDP` is given;
+4. Runs the ordered leaf-function sequence shown above. The WinRM question comes before
+   firewall configuration so the TCP 5985/5986 allow rules match the service choice.
+   SMB hardening is step 6, and the RDP question follows it. Yes keeps each service enabled;
+   No disables it. `-NoPrompt` makes firewall configuration use supplied/default ports and
+   disables WinRM and RDP unless `-SkipWinRM`/`-PreserveManagementPort` or `-SkipRDP` is given;
    required password and Splunk prompts still occur unless their values or skip switches are supplied.
 5. Shows the summary with `Show-OperationSummary`, appends this run's new
    `$global:Error` entries to `Desktop\hard.txt`, and prints the overall result.
@@ -349,8 +350,10 @@ keeps its Process-scope `Bypass`, so it runs last, and later sessions get `Restr
 **Prompts in a full run.** The Administrator password is prompted first unless a
 `-SaltPhrase` is supplied. Zulu then prompts for its seed if needed; Splunk prompts for its
 IP unless `-SplunkIP` or `-SkipSplunk` is supplied. Firewall setup asks for extra ports
-unless `-NoPrompt`; the RDP choice follows SMB hardening unless `-DisableRDP` or `-SkipRDP`
-was passed. In a session that cannot prompt, RDP is disabled and firewall uses its defaults.
+unless `-NoPrompt`; the WinRM choice precedes firewall configuration unless `-DisableWinRM`,
+`-SkipWinRM`, or `-PreserveManagementPort` was passed. The RDP choice follows SMB hardening
+unless `-DisableRDP` or `-SkipRDP` was passed. In a session that cannot prompt, both services
+are disabled and firewall uses its defaults.
 Anything new that prompts needs a parameter that bypasses it.
 
 ---

@@ -9,7 +9,7 @@
           1. Set-AdministratorPassword    - unless -SkipPasswordChange
           2. Remove-AdminUsers
           3. Set-ZuluPassword             - existing accounts, unless -SkipPasswordChange
-          4. Set-FirewallConfiguration
+          4. Ask whether WinRM is needed, then configure the firewall accordingly
           5. Mitigate-ZeroLogon
           6. Mitigate-EternalBlue
           7. Ask whether RDP is needed, then apply RDP group/service changes
@@ -24,9 +24,10 @@
         reported without stopping the rest. Ends with the operation summary.
 
         Prompts for passwords and values not passed: the Administrator password, Zulu salt
-        phrase, Splunk server IP, and extra firewall ports. The firewall is configured before
-        SMB hardening, and both precede the RDP choice; a skilled operator should account for
-        possible session loss. To pick individual steps or sections instead, use
+        phrase, Splunk server IP, whether WinRM and RDP are needed, and extra firewall ports.
+        The WinRM choice precedes firewall configuration; firewall and SMB hardening precede
+        the RDP choice. A skilled operator should account for possible session loss. To pick
+        individual steps or sections instead, use
         Invoke-HardeningMenu.
     .PARAMETER SkipPasswordChange
         Skip the Administrator password change, Zulu rotation, and CCDC account creation. Alias: -sp.
@@ -36,6 +37,13 @@
         Disable RDP and reset the RDP group, without asking. Alias: -drdp. With neither
         this nor -SkipRDP, the run asks whether RDP is needed after SMB hardening; with
         -NoPrompt (or in a session that cannot prompt) it disables RDP unless -SkipRDP is set.
+    .PARAMETER SkipWinRM
+        Leave WinRM enabled and keep TCP 5985/5986 allowed through the firewall, without
+        asking. Alias: -swrm. -PreserveManagementPort has the same effect.
+    .PARAMETER DisableWinRM
+        Disable WinRM and do not add its standard firewall allow rules, without asking. Alias: -dwrm.
+        With neither WinRM switch nor -PreserveManagementPort, the run asks whether WinRM
+        is needed before configuring the firewall; with -NoPrompt it disables WinRM.
     .PARAMETER FirewallPorts
         Ports to allow ("80, 443", @("80","443"), or 80,443). If omitted, a domain
         controller gets the common AD ports and any other machine gets Deny All only. Alias: -f.
@@ -43,8 +51,9 @@
         Extra ports to allow on top of -FirewallPorts or the defaults above - e.g. a database
         or web port the box needs. Same formats as -FirewallPorts. Alias: -ap.
     .PARAMETER NoPrompt
-        Don't ask whether RDP is needed (RDP is disabled unless -SkipRDP) or for extra
-        firewall ports (only the defaults, -FirewallPorts, and -AdditionalPorts are used).
+        Don't ask whether WinRM or RDP is needed (both are disabled unless their keep switch
+        is given), or for extra firewall ports (only the defaults, -FirewallPorts, and
+        -AdditionalPorts are used).
     .PARAMETER SaltPhrase
         Salt phrase for Zulu password generation. If omitted, Zulu prompts for it. Alias: -s.
     .PARAMETER LogPath
@@ -72,6 +81,12 @@
         [Alias("drdp")]
         [switch]$DisableRDP,
 
+        [Alias("swrm")]
+        [switch]$SkipWinRM,
+
+        [Alias("dwrm")]
+        [switch]$DisableWinRM,
+
         [Alias("f")]
         [string[]]$FirewallPorts,
 
@@ -95,6 +110,10 @@
     if ($SkipRDP -and $DisableRDP) {
         throw "-SkipRDP and -DisableRDP cannot be used together"
     }
+    if (($SkipWinRM -and $DisableWinRM) -or ($DisableWinRM -and $PreserveManagementPort)) {
+        throw "-SkipWinRM/-PreserveManagementPort and -DisableWinRM cannot be used together"
+    }
+    if ($PreserveManagementPort) { $SkipWinRM = $true }
 
     # -- FirewallPorts parsing ----------------------------------------------
     try {
@@ -168,6 +187,9 @@
     if ($SkipRDP) {
         Write-Status "RDP group reset and RDP disable will be skipped (RDP stays enabled)"
     }
+    if ($SkipWinRM) {
+        Write-Status "WinRM will be kept enabled and TCP 5985/5986 will be allowed"
+    }
 
     Write-Banner "Step 1/13: Change Administrator password" -Style Inline -Log
     if ($SkipPasswordChange) {
@@ -189,9 +211,30 @@
         Set-ZuluPassword -SaltPhrase $SaltPhrase
     }
 
+    # Decide before configuring the firewall so the WinRM allow rules match the service choice.
+    if (-not $SkipWinRM -and -not $DisableWinRM) {
+        if ($NoPrompt) {
+            Write-Status "WinRM will be disabled (-NoPrompt; pass -SkipWinRM or -PreserveManagementPort to keep it)"
+        } else {
+            Write-Host ""
+            Write-Status -Level Warning "Disabling WinRM can end a WinRM session to this machine." -NoLog
+            try {
+                $winrmChoice = Read-Choice -Prompt "Is WinRM needed on this machine?" -Default 'Y' -Options @(
+                    @{ Key = 'Y'; Label = 'Yes - keep WinRM enabled and allow TCP 5985/5986'; Value = 'keep' }
+                    @{ Key = 'N'; Label = 'No  - disable WinRM without preserving its firewall ports'; Value = 'disable' }
+                )
+                $SkipWinRM = $winrmChoice -eq 'keep'
+            } catch {
+                Write-Status -Level Warning "Cannot ask in this session; WinRM will be disabled (pass -SkipWinRM to keep it)" `
+                    -LogMessage "WinRM prompt unavailable: $($_.Exception.Message)"
+            }
+            Write-Status "WinRM will be $(if ($SkipWinRM) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly
+        }
+    }
+
     Write-Banner "Step 4/13: Configure firewall" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 4/13'
-    Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$PreserveManagementPort
+    Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$SkipWinRM
 
     Write-Banner "Step 5/13: Mitigate ZeroLogon" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 5/13'
@@ -238,7 +281,7 @@
     Write-Banner "Step 9/13: Remove remote management services" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 9/13'
     $remoteManagementArgs = @{}
-    if ($PreserveManagementPort) { $remoteManagementArgs.SkipWinRM = $true }
+    if ($SkipWinRM) { $remoteManagementArgs.SkipWinRM = $true }
     if ($SkipRDP) { $remoteManagementArgs.SkipRDP = $true }
     Remove-RemoteManagement @remoteManagementArgs
 

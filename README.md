@@ -157,8 +157,8 @@ log file. `Get-HardeningContext` shows what the module detected.
 
 There are two entry points:
 
-- **`Invoke-WindowsHardening`** runs the full sequence in order, including firewall
-  configuration and SMB hardening before the RDP choice, then prints a summary.
+- **`Invoke-WindowsHardening`** runs the full sequence in order, including a WinRM choice
+  before firewall configuration and an RDP choice after SMB hardening, then prints a summary.
 - **`Invoke-HardeningMenu`** lets you pick individual sections or steps.
 
 ### Domain Hardening
@@ -201,7 +201,7 @@ exceptions to the domain policy or use a separately targeted GPO for those serve
 ```powershell
 Import-Module ./WindowsHardening -Force
 
-# Full run (DC vs. member/workstation is auto-detected); asks only for extra firewall ports
+# Full run (DC vs. member/workstation is auto-detected); asks whether WinRM/RDP are needed
 Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
 
 # Full run, no prompts at all
@@ -219,12 +219,13 @@ Invoke-HardeningMenu
 
 `Invoke-WindowsHardening` starts by prompting to change the Administrator password,
 then prompts for the Zulu salt phrase (`-SaltPhrase`) and Splunk server IP
-(`-SplunkIP`, or `-SkipSplunk`) as needed. It configures the firewall at step 4,
-then applies ZeroLogon mitigation and SMB hardening. The firewall keeps default ports
-(plus `-FirewallPorts` / `-AdditionalPorts`) and asks for extra ones. After SMB hardening,
-it asks whether RDP
-is needed; answer Yes to keep it enabled or No to disable it. `-NoPrompt` skips the RDP
-and extra-port questions and disables RDP unless `-SkipRDP` is given; required password or Splunk
+(`-SplunkIP`, or `-SkipSplunk`) as needed. Before firewall configuration, it asks whether
+WinRM is needed; answer Yes to keep it enabled and add TCP 5985/5986 allow rules, or No to
+disable it without adding those standard exceptions. The firewall keeps default ports (plus `-FirewallPorts` /
+`-AdditionalPorts`) and asks for extra ones. After SMB hardening, it asks whether RDP
+is needed; answer Yes to keep it enabled or No to disable it. `-NoPrompt` skips the WinRM,
+RDP, and extra-port questions. WinRM is disabled unless `-SkipWinRM` or
+`-PreserveManagementPort` is given; RDP is disabled unless `-SkipRDP` is given. Required password or Splunk
 prompts still occur unless their values or skip switches are provided.
 
 Optionally take a backup first (experimental):
@@ -380,9 +381,11 @@ Invoke-WindowsHardening -FirewallPorts "80, 443" -SaltPhrase "a long passphrase"
 
 Without `-FirewallPorts`, a domain controller gets the common AD ports and any
 other machine gets Deny All Inbound only; either way the run then asks for extra
-ports to allow, unless `-NoPrompt` is given. The RDP prompt asks whether RDP is needed:
-Yes keeps RDP enabled, No disables it. WinRM is disabled (by
-`Remove-RemoteManagement`) unless `-PreserveManagementPort` is given. The
+ports to allow, unless `-NoPrompt` is given. The WinRM prompt asks whether WinRM is needed:
+Yes keeps it enabled and allows TCP 5985/5986, No disables it without adding those standard exceptions.
+The RDP prompt asks whether RDP is needed: Yes keeps RDP enabled, No disables it.
+`-SkipWinRM` keeps WinRM enabled and preserves its ports without asking; `-DisableWinRM`
+disables it without asking. `-PreserveManagementPort` has the same keep effect. The
 execution policy is set to Restricted machine-wide, so new sessions need
 `-ExecutionPolicy Bypass` to load the module afterwards.
 
@@ -541,6 +544,8 @@ Commonly used parameters and their short aliases:
 |---|---|---|
 | `-SkipPasswordChange` | `-sp` | `Invoke-WindowsHardening` |
 | `-SkipRDP` | `-srdp` | `Invoke-WindowsHardening` |
+| `-SkipWinRM` | `-swrm` | `Invoke-WindowsHardening` |
+| `-DisableWinRM` | `-dwrm` | `Invoke-WindowsHardening` |
 | `-FirewallPorts` | `-f` | `Invoke-WindowsHardening`, `Set-FirewallConfiguration` |
 | `-AdditionalPorts` | `-ap` | `Invoke-WindowsHardening` |
 | `-SaltPhrase` | `-s` | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Invoke-UserHardening` |
@@ -554,12 +559,14 @@ Commonly used parameters and their short aliases:
 | `-SkipPasswordChange` / `-sp` | switch | `$false` | Skip Zulu account creation and password rotation |
 | `-SkipRDP` / `-srdp` | switch | `$false` | Keep RDP enabled and skip the RDP group reset, without asking |
 | `-DisableRDP` / `-drdp` | switch | `$false` | Disable RDP and reset the RDP group, without asking. With neither RDP switch, the run asks whether RDP is needed after SMB hardening |
+| `-SkipWinRM` / `-swrm` | switch | `$false` | Keep WinRM enabled and allow TCP 5985/5986, without asking |
+| `-DisableWinRM` / `-dwrm` | switch | `$false` | Disable WinRM without adding its standard firewall allow rules, without asking. With neither WinRM switch nor `-PreserveManagementPort`, the run asks before configuring the firewall |
 | `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
 | `-AdditionalPorts` / `-ap` | string[] | — | Extra ports allowed on top of `-FirewallPorts` or the defaults |
-| `-NoPrompt` | switch | `$false` | Don't ask whether RDP is needed (RDP is disabled unless `-SkipRDP`) or for extra firewall ports |
+| `-NoPrompt` | switch | `$false` | Don't ask whether WinRM or RDP is needed (both are disabled unless their keep switch is given) or for extra firewall ports |
 | `-SaltPhrase` / `-s` | string | — | Salt phrase for Zulu passwords (else Zulu prompts) |
 | `-LogPath` | string | `C:\Windows\Logs\Hardening` | Log output directory |
-| `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled) |
+| `-PreserveManagementPort` | switch | `$false` | Keep WinRM reachable (firewall rules for TCP 5985/5986, service not disabled); same as `-SkipWinRM` |
 | `-SplunkIP` | string | — | Splunk server IP (else prompts) |
 | `-SkipSplunk` | switch | `$false` | Skip the Splunk step (no prompt) |
 
@@ -759,6 +766,7 @@ the function's log output.
 
 ## Security Notes
 
-- **WinRM / firewall.** Without `-PreserveManagementPort`, hardening disables
-  WinRM, and RDP too unless `-SkipRDP` is given — expect console-only access
-  afterwards.
+- **WinRM / firewall.** The full run asks whether WinRM is needed and aligns the
+  TCP 5985/5986 firewall rules with that choice. `-NoPrompt` disables WinRM unless
+  `-SkipWinRM` or `-PreserveManagementPort` is given. RDP is disabled unless
+  `-SkipRDP` is given. Plan access accordingly before applying hardening remotely.
