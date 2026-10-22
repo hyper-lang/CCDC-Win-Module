@@ -169,10 +169,11 @@ repository (or accepts a local archive with `-GpoZipPath`), imports the selected
 and links the policies. Existing same-name GPOs are updated from the backups.
 
 The sequence changes the Administrator password, cleans the domain admin groups, rotates
-Zulu passwords, and links `DC Allow AD` to the Domain Controllers OU with its Domain
-firewall profile enabled, default inbound blocked, and default outbound allowed. It links `Domain
-Allow AD + Core + Default Block` to the domain root with a `Domain Computers` security
-filter, and links `Domain Splomk` outbound access for `Domain Computers` and
+Zulu passwords, and links `Domain Allow AD + Core + Default Block` to the domain root for
+every computer, domain controllers included: all firewall profiles on, default inbound and
+outbound blocked, local rules ignored, plus an added outbound NTP (UDP 123) rule. `DC Allow AD`
+is linked to the Domain Controllers OU and layers the DC inbound rules on top, with added DFS
+Replication rules (`dfsrs.exe` RPC in and TCP out) for SYSVOL. It links `Domain Splomk` outbound access for `Domain Computers` and
 `Domain Controllers`. It then links the update interval and `Domain Good-GPO` at the
 root. Database, web, mail, and WinRM role policies are linked at the root and filtered
 to the selected computer accounts. Optional named port exceptions are applied through

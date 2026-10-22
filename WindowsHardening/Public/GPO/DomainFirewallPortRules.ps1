@@ -93,7 +93,7 @@ function Remove-DomainFirewallPortRule {
             Remove-NetFirewallRule -PolicyStore $policyStore -Name $ruleName -ErrorAction SilentlyContinue
             $inheritance = Get-GPInheritance -Target $domain.DistinguishedName -ErrorAction Stop
             if (@($inheritance.GpoLinks | Where-Object DisplayName -eq $gpoName).Count -gt 0) {
-                Remove-GPLink -Name $gpoName -Target $domain.DistinguishedName -Confirm:$false -ErrorAction Stop
+                Remove-GPLink -Name $gpoName -Target $domain.DistinguishedName -Confirm:$false -ErrorAction Stop | Out-Null
             }
             Remove-GPO -Name $gpoName -ErrorAction Stop
             Write-Status -Level Success "Removed domain firewall rule '$Name'" -LogMessage "Removed port rule GPO '$gpoName'"

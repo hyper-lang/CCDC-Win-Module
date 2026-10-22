@@ -11,7 +11,9 @@ function Invoke-DomainHardening {
 
         Role policies are linked at the domain root and filtered to the exact selected
         computer accounts. Domain Splunk outbound applies to Domain Computers and
-        Domain Controllers. The domain firewall policy excludes domain controllers.
+        Domain Controllers. The domain firewall policy (default Block in and out, plus
+        NTP) applies to every computer; DC Allow AD layers the DC inbound and SYSVOL
+        replication rules on top of it.
         WinRM is left running by this sequence.
     .PARAMETER SkipPasswordChange
         Skip the Administrator password change, Zulu rotation, and CCDC account creation.

@@ -196,6 +196,23 @@ function Invoke-CcdcGpUpdate {
     }
 }
 
+function Set-CcdcGpoFirewallRule {
+    # Creates or replaces one allow rule in a domain GPO. $Rule holds the remaining
+    # New-NetFirewallRule parameters and must include Name.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$GpoName,
+        [Parameter(Mandatory=$true)][hashtable]$Rule
+    )
+
+    if (-not (Get-Module -Name NetSecurity)) { Import-Module NetSecurity -ErrorAction Stop }
+    $policyStore = "$((Get-ADDomain -ErrorAction Stop).DNSRoot)\$GpoName"
+    if (Get-NetFirewallRule -PolicyStore $policyStore -Name $Rule.Name -ErrorAction Ignore) {
+        Remove-NetFirewallRule -PolicyStore $policyStore -Name $Rule.Name -ErrorAction Stop
+    }
+    New-NetFirewallRule -PolicyStore $policyStore -Action Allow -Enabled True @Rule -ErrorAction Stop | Out-Null
+}
+
 function Add-CcdcWinRMAccessGpo {
     [CmdletBinding()]
     param(
@@ -218,10 +235,11 @@ function Add-CcdcWinRMAccessGpo {
         Remove-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction Stop
     }
 
+    # WinRM listens through HTTP.sys (System), so a -Service WinRM filter never matches.
     New-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' `
         -DisplayName 'CCDC Preserve WinRM' -Description 'Allows WinRM management for selected servers.' `
         -Direction Inbound -Action Allow -Protocol TCP -LocalPort @('5985', '5986') `
-        -Service 'WinRM' -Profile Domain -RemoteAddress $RemoteAddress -Enabled True -ErrorAction Stop | Out-Null
+        -Program 'System' -Profile Domain -RemoteAddress $RemoteAddress -Enabled True -ErrorAction Stop | Out-Null
 
     Add-CcdcGpoLink -Name $gpo.DisplayName -Target $target -SecurityFilter $ComputerName
     Write-Status -Level Success "Created/updated '$gpoName' for $($ComputerName -join ', ')" `
