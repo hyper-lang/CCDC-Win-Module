@@ -18,6 +18,7 @@ protection for both Active Directory domain controllers and local
 - [Installation](#installation)
 - [Module Layout](#module-layout)
 - [Quick Start](#quick-start)
+- [Domain Hardening](#domain-hardening)
 - [Functions](#functions)
 - [Parameters and Aliases](#parameters-and-aliases)
 - [Backup and Restore](#backup-and-restore)
@@ -113,6 +114,7 @@ WindowsHardening/
 ├── WindowsHardening.psd1 / .psm1
 ├── Public/
 │   ├── Invoke-WindowsHardening.ps1, Invoke-HardeningMenu.ps1
+│   ├── GPO/         Domain GPO import/link operations and role firewall policies
 │   ├── Users/       Invoke-UserHardening, Set-AdministratorPassword, Create-CCDCUsers,
 │   │                Set-ZuluPassword, Set-UserPassword, New-ADUserAccount, Remove-AdminUsers,
 │   │                Remove-RDPUsers, Add-RDPUsers, Protect-Mimikatz
@@ -158,6 +160,43 @@ There are two entry points:
 - **`Invoke-WindowsHardening`** runs the full sequence in order, including firewall
   configuration and SMB hardening before the RDP choice, then prints a summary.
 - **`Invoke-HardeningMenu`** lets you pick individual sections or steps.
+
+### Domain Hardening
+
+`Invoke-DomainHardening` runs on a domain controller. It imports the `ActiveDirectory`
+and `GroupPolicy` modules, downloads `gpos.zip` from the BYU-CCDC public resources
+repository (or accepts a local archive with `-GpoZipPath`), imports the selected backups,
+and links the policies. Existing same-name GPOs are updated from the backups.
+
+The sequence changes the Administrator password, cleans the domain admin groups, rotates
+Zulu passwords, and links `DC Allow AD` to the Domain Controllers OU. It links `Domain
+Allow AD + Core + Default Block` to the domain root with a `Domain Computers` security
+filter, then links the update interval and `Domain Good-GPO` at the root. The firewall
+role policies are linked at the root and filtered to the selected computer accounts.
+Finally it runs `gpupdate /force`, configures Splunk if enabled, and creates CCDC users.
+WinRM is left running by this sequence.
+
+By default, the run prompts only for which computers need Splunk, database, web, mail, or
+WinRM management access, then for the Splunk indexer address. Use `-RoleServers` and
+`-SplunkIP` to supply those values. `-NoPrompt` skips role selection, so combine it with
+`-SkipSplunk` or `-SplunkIP`.
+
+For selected WinRM servers, the run creates or updates a `CCDC Preserve WinRM` GPO with
+inbound TCP 5985/5986 access and a direct computer-account filter. Its remote address
+defaults to `LocalSubnet`; override it with `-WinRMRemoteAddress`. The policy leaves the
+WinRM service startup and state unchanged.
+
+```powershell
+Invoke-DomainHardening -SaltPhrase 'a long passphrase' -SkipSplunk
+
+Invoke-DomainHardening -NoPrompt -SaltPhrase 'a long passphrase' `
+    -RoleServers @{ Database = @('DB01'); Web = @('WEB01') } `
+    -SplunkIP '10.0.0.20'
+```
+
+The supplied domain firewall policy disables local firewall policy merging. A local
+firewall allow rule may therefore be ignored on computers receiving that GPO. Add
+exceptions to the domain policy or use a separately targeted GPO for those servers.
 
 ```powershell
 Import-Module ./WindowsHardening -Force
@@ -346,6 +385,14 @@ Yes keeps RDP enabled, No disables it. WinRM is disabled (by
 `Remove-RemoteManagement`) unless `-PreserveManagementPort` is given. The
 execution policy is set to Restricted machine-wide, so new sessions need
 `-ExecutionPolicy Bypass` to load the module afterwards.
+
+### `Invoke-DomainHardening`
+
+Runs on a domain controller. Downloads or accepts the GPO backup ZIP, imports the
+ActiveDirectory and GroupPolicy modules, imports the competition GPOs, then links the
+DC policy, domain firewall policy, update interval, domain baseline, and selected role
+firewall policies. It runs `gpupdate /force` before the final Splunk and CCDC account
+steps. See [Domain Hardening](#domain-hardening) for scopes and examples.
 
 ### `Protect-Mimikatz`
 

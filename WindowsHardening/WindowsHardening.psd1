@@ -4,14 +4,23 @@
     GUID              = 'a5b6951f-2e85-4915-bfd1-4fc3a779d13c'
     Author            = 'Aaron-M-Anderson, echo8358, deltabluejay, TheBushWookiee, zinkozapper, hyper-lang'
     CompanyName       = 'BYU CCDC'
-    Description       = 'Comprehensive Windows hardening module with OS detection, user management, firewall configuration, and service hardening for AD and local environments.'
+    Description       = 'Windows hardening module for local systems and Active Directory domains, with user management, Group Policy deployment, firewall configuration, and service hardening.'
 
     PowerShellVersion = '5.1'
 
     FunctionsToExport = @(
         # -- Public/ - entry points ------------------------------------------
         'Invoke-WindowsHardening'
+        'Invoke-DomainHardening'
         'Invoke-HardeningMenu'
+
+        # -- Public/GPO/ -----------------------------------------------------
+        'Link-DcAllowAdGpo'
+        'Link-DomainFirewallGpo'
+        'Link-DomainGpoUpdateInterval'
+        'Link-DomainGoodGpo'
+        'Link-ServerRoleGpo'
+        'Link-ServerWinRMGpo'
 
         # -- Public/Users/ ---------------------------------------------------
         'Invoke-UserHardening'

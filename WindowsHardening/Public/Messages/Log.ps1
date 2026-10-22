@@ -101,6 +101,10 @@ function Set-OperationStatus {
 # are added when invoked through Set-OperationStatus.
 $script:TrackedOperations = @(
     "Initialize Context",
+    "Link DC Allow AD GPO", "Link Domain Firewall GPO", "Link Domain GPO Update Interval",
+    "Link Domain Good-GPO", "Link Splunk Server GPO", "Link Database Server GPO",
+    "Link Web Server GPO", "Link Mail Server GPO", "Link WinRM Management GPO",
+    "Refresh Group Policy",
     "Remove Admin Users", "Remove RDP Users", "Add RDP Users",
     "Change Administrator Password", "Zulu Passwords", "Add Competition Users", "Change Passwords", "Patch Mimikatz",
     "Configure Firewall", "Remove Remote Management",
