@@ -130,15 +130,18 @@ function Add-CcdcGpoLink {
         [Parameter(Mandatory=$true)][string]$Name,
         [Parameter(Mandatory=$true)][string]$Target,
         [string[]]$SecurityFilter,
-        [string[]]$SecurityFilterGroup
+        [string[]]$SecurityFilterGroup,
+        [switch]$Enforced
     )
 
+    # Enforced links win over conflicting OU-linked GPOs and ignore Block Inheritance.
+    $enforcedValue = if ($Enforced) { 'Yes' } else { 'No' }
     $inheritance = Get-GPInheritance -Target $Target -ErrorAction Stop
     $existingLink = @($inheritance.GpoLinks | Where-Object { $_.DisplayName -eq $Name }) | Select-Object -First 1
     if ($existingLink) {
-        Set-GPLink -Name $Name -Target $Target -LinkEnabled Yes -ErrorAction Stop | Out-Null
+        Set-GPLink -Name $Name -Target $Target -LinkEnabled Yes -Enforced $enforcedValue -ErrorAction Stop | Out-Null
     } else {
-        New-GPLink -Name $Name -Target $Target -LinkEnabled Yes -ErrorAction Stop | Out-Null
+        New-GPLink -Name $Name -Target $Target -LinkEnabled Yes -Enforced $enforcedValue -ErrorAction Stop | Out-Null
     }
 
     if ($SecurityFilter -and $SecurityFilter.Count -gt 0) {
@@ -155,11 +158,13 @@ function Invoke-CcdcGpoLinkOperation {
         [Parameter(Mandatory=$true)][string]$BackupRoot,
         [Parameter(Mandatory=$true)][string]$Target,
         [string[]]$SecurityFilter,
-        [string[]]$SecurityFilterGroup
+        [string[]]$SecurityFilterGroup,
+        [switch]$Enforced
     )
 
     $gpo = Import-CcdcGpo -Name $Name -BackupRoot $BackupRoot
-    Add-CcdcGpoLink -Name $gpo.DisplayName -Target $Target -SecurityFilter $SecurityFilter -SecurityFilterGroup $SecurityFilterGroup
+    Add-CcdcGpoLink -Name $gpo.DisplayName -Target $Target -SecurityFilter $SecurityFilter `
+        -SecurityFilterGroup $SecurityFilterGroup -Enforced:$Enforced
     Write-Status -Level Success "Imported '$Name' and linked it to $Target" -LogMessage "Imported GPO '$Name' and linked to '$Target'"
 }
 

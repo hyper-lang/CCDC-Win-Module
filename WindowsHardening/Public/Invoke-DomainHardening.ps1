@@ -13,7 +13,8 @@ function Invoke-DomainHardening {
         computer accounts. Domain Splunk outbound applies to Domain Computers and
         Domain Controllers. The domain firewall policy (default Block in and out, plus
         NTP) applies to every computer; DC Allow AD layers the DC inbound and SYSVOL
-        replication rules on top of it.
+        replication rules on top of it. The domain-wide baseline links are enforced so
+        OU-linked GPOs and Block Inheritance cannot override them.
         WinRM is left running by this sequence.
     .PARAMETER SkipPasswordChange
         Skip the Administrator password change, Zulu rotation, and CCDC account creation.

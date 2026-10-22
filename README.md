@@ -175,8 +175,10 @@ outbound blocked, local rules ignored, plus an added outbound NTP (UDP 123) rule
 is linked to the Domain Controllers OU and layers the DC inbound rules on top, with added DFS
 Replication rules (`dfsrs.exe` RPC in and TCP out) for SYSVOL. It links `Domain Splomk` outbound access for `Domain Computers` and
 `Domain Controllers`. It then links the update interval and `Domain Good-GPO` at the
-root. Database, web, mail, and WinRM role policies are linked at the root and filtered
-to the selected computer accounts. Optional named port exceptions are applied through
+root. These baseline links are **enforced**, so a GPO linked on an OU cannot override
+them (for example by turning the firewall off) and Block Inheritance on an OU cannot
+drop them. Database, web, mail, and WinRM role policies are linked at the root, filtered
+to the selected computer accounts, and not enforced. Optional named port exceptions are applied through
 targeted domain GPOs. Finally it runs `gpupdate /force`, configures Splunk if enabled,
 and creates CCDC users.
 WinRM is left running by this sequence.
@@ -422,7 +424,7 @@ execution policy is set to Restricted machine-wide, so new sessions need
 Runs on a domain controller. Downloads or accepts the GPO backup ZIP, imports the
 ActiveDirectory and GroupPolicy modules, imports the competition GPOs, then links the
 DC policy, domain firewall policy, domain Splunk outbound policy, update interval,
-domain baseline, and selected role firewall policies. It can also add or remove named
+domain baseline (all enforced), and selected role firewall policies. It can also add or remove named
 per-computer firewall GPO exceptions using `-FirewallPortRulesToAdd` and
 `-FirewallPortRulesToRemove`. It runs `gpupdate /force` before the final Splunk and
 CCDC account steps. See [Domain Hardening](#domain-hardening) for scopes and examples.
