@@ -6,12 +6,17 @@ function Add-DomainFirewallPortRule {
         Creates one GPO per rule name, links it at the domain root, and filters it to
         the specified computer accounts. Use this for ports that must survive the
         domain firewall policy's disabled local-policy merge.
+    .PARAMETER Port
+        Ports and ranges, for example 5432, '50000-50100', or 21, '50000-50100'.
+        For inbound rules these are local ports; for outbound rules, remote ports.
+    .EXAMPLE
+        Add-DomainFirewallPortRule -Name 'FileZilla' -ComputerName FTP01 -Port 21, '50000-50100'
     #>
     [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
     param(
         [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$')][string]$Name,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
-        [Parameter(Mandatory=$true)][ValidateRange(1,65535)][int[]]$Port,
+        [Parameter(Mandatory=$true)][ValidateScript({ Test-CcdcPortSpec $_ })][string[]]$Port,
         [ValidateSet('TCP','UDP')][string]$Protocol = 'TCP',
         [ValidateSet('Inbound','Outbound')][string]$Direction = 'Inbound',
         [string[]]$RemoteAddress = @('Any')
@@ -51,9 +56,9 @@ function Add-DomainFirewallPortRule {
             ErrorAction = 'Stop'
         }
         if ($Direction -eq 'Inbound') {
-            $ruleParams.LocalPort = @($Port | ForEach-Object { [string]$_ })
+            $ruleParams.LocalPort = @($Port | ForEach-Object { $_ -replace '\s', '' })
         } else {
-            $ruleParams.RemotePort = @($Port | ForEach-Object { [string]$_ })
+            $ruleParams.RemotePort = @($Port | ForEach-Object { $_ -replace '\s', '' })
         }
         New-NetFirewallRule @ruleParams | Out-Null
 
@@ -99,4 +104,19 @@ function Remove-DomainFirewallPortRule {
             Write-Status -Level Success "Removed domain firewall rule '$Name'" -LogMessage "Removed port rule GPO '$gpoName'"
         }
     }
+}
+
+function Test-CcdcPortSpec {
+    # ValidateScript helper: accepts a port (N) or an inclusive range (N-M) within 1-65535.
+    param([string]$Spec)
+
+    $value = $Spec -replace '\s', ''
+    if ($value -notmatch '^(\d{1,5})(?:-(\d{1,5}))?$') {
+        throw "'$Spec' is not a port or range; use a number like 5432 or a range like 50000-50100."
+    }
+    $low = [int]$Matches[1]
+    $high = if ($Matches[2]) { [int]$Matches[2] } else { $low }
+    if ($low -lt 1 -or $high -gt 65535) { throw "'$Spec' is outside 1-65535." }
+    if ($low -gt $high) { throw "'$Spec' has its low port above its high port." }
+    $true
 }

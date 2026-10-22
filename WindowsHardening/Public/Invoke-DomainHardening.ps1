@@ -45,7 +45,8 @@ function Invoke-DomainHardening {
         Skip the final Splunk installation step.
     .PARAMETER FirewallPortRulesToAdd
         Optional hashtables passed to Add-DomainFirewallPortRule. Each needs Name,
-        ComputerName, and Port; Protocol, Direction, and RemoteAddress are optional.
+        ComputerName, and Port (ports and/or ranges such as '50000-50100'); Protocol,
+        Direction, and RemoteAddress are optional.
     .PARAMETER FirewallPortRulesToRemove
         Names of previously added domain port rules to remove.
     .PARAMETER LogPath

@@ -206,7 +206,7 @@ The services themselves are left as they are:
 Override a scope with `-RoleRemoteAddress`, for example `@{ RDP = 'LocalSubnet' }`, or
 link a role on its own with `Link-ServerServiceGpo -Role SSH -ComputerName FILE01`. The
 FTP data rules match only IIS FTP. For another FTP server, add its passive range with
-`Add-DomainFirewallPortRule`. Windows' stateful FTP setting is not a substitute: it does
+`Add-DomainFirewallPortRule -Port 21, '50000-50100'`. Windows' stateful FTP setting is not a substitute: it does
 not open passive ports, and the GPO version of the setting was not honored in testing.
 
 ```powershell
@@ -226,6 +226,9 @@ the specified computers. You can also pass the add/remove requests into
 ```powershell
 # Add inbound TCP 5432 only for DB01 and DB02
 Add-DomainFirewallPortRule -Name 'Postgres' -ComputerName DB01,DB02 -Port 5432
+
+# Ports and ranges can be mixed; each range is stored as one rule entry
+Add-DomainFirewallPortRule -Name 'FileZilla' -ComputerName FTP01 -Port 21, '50000-50100'
 
 # Add outbound TCP 9997 only for APP01, restricted to a specific indexer
 Add-DomainFirewallPortRule -Name 'SplunkIndexer' -ComputerName APP01 -Port 9997 `
