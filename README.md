@@ -177,14 +177,14 @@ Replication rules (`dfsrs.exe` RPC in and TCP out) for SYSVOL. It links `Domain 
 `Domain Controllers`. It then links the update interval and `Domain Good-GPO` at the
 root. These baseline links are **enforced**, so a GPO linked on an OU cannot override
 them (for example by turning the firewall off) and Block Inheritance on an OU cannot
-drop them. Database, web, mail, and WinRM role policies are linked at the root, filtered
-to the selected computer accounts, and not enforced. Optional named port exceptions are applied through
+drop them. Role policies (database, web, mail, WinRM, SSH, RDP, FTP, SMB) are linked at
+the root, filtered to the selected computer accounts, and not enforced. An OU with Block
+Inheritance therefore drops them, but its computers keep the enforced baseline. Optional named port exceptions are applied through
 targeted domain GPOs. Finally it runs `gpupdate /force`, configures Splunk if enabled,
 and creates CCDC users.
 WinRM is left running by this sequence.
 
-By default, the run prompts for which Windows Server computers need database, web,
-mail, or WinRM management access, then for the Splunk indexer address. Splunk outbound
+By default, the run prompts for which Windows Server computers need each role, then for the Splunk indexer address. Splunk outbound
 TCP 9997 is linked for all domain computers and domain controllers.
 Domain controllers are included in those lists. Select multiple entries by entering
 their numbers separated by commas (for example `1,3`), or pass arrays through
@@ -192,17 +192,29 @@ their numbers separated by commas (for example `1,3`), or pass arrays through
 the indexer address. `-NoPrompt` skips role selection, so combine it with `-SkipSplunk`
 or `-SplunkIP`.
 
-For selected WinRM servers, the run creates or updates a `CCDC Preserve WinRM` GPO with
-inbound TCP 5985/5986 access and a direct computer-account filter. Its remote address
-defaults to `LocalSubnet`; override it with `-WinRMRemoteAddress`. The policy leaves the
-WinRM service startup and state unchanged.
+The service roles create or update their own GPO with a direct computer-account filter.
+The services themselves are left as they are:
+
+| Role | GPO | Inbound allow | Default remote scope |
+|---|---|---|---|
+| WinRM | `CCDC Preserve WinRM` | TCP 5985, 5986 (System) | `LocalSubnet` (`-WinRMRemoteAddress`) |
+| SSH | `CCDC SSH Access` | TCP 22 | Any |
+| RDP | `CCDC RDP Access` | TCP and UDP 3389 | Any |
+| FTP | `CCDC FTP Access` | TCP 21; passive data TCP 1024-65535 and active data out from TCP 20, both limited to the IIS `ftpsvc` service | Any |
+| SMB | `CCDC SMB Access` | TCP 445 (System) | Any |
+
+Override a scope with `-RoleRemoteAddress`, for example `@{ RDP = 'LocalSubnet' }`, or
+link a role on its own with `Link-ServerServiceGpo -Role SSH -ComputerName FILE01`. The
+FTP data rules match only IIS FTP. For another FTP server, add its passive range with
+`Add-DomainFirewallPortRule`. Windows' stateful FTP setting is not a substitute: it does
+not open passive ports, and the GPO version of the setting was not honored in testing.
 
 ```powershell
 Invoke-DomainHardening -SaltPhrase 'a long passphrase' -SkipSplunk
 
 Invoke-DomainHardening -NoPrompt -SaltPhrase 'a long passphrase' `
-    -RoleServers @{ Database = @('DB01','DB02'); Web = @('WEB01') } `
-    -SplunkIP '10.0.0.20'
+    -RoleServers @{ Database = @('DB01','DB02'); Web = @('WEB01'); SSH = @('WEB01'); RDP = @('JUMP01') } `
+    -RoleRemoteAddress @{ RDP = 'LocalSubnet' } -SplunkIP '10.0.0.20'
 ```
 
 The supplied domain firewall policy disables local firewall policy merging. A local

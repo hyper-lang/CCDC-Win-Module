@@ -26,13 +26,17 @@ function Invoke-DomainHardening {
     .PARAMETER GpoCachePath
         Folder used for the downloaded archive and extracted backups.
     .PARAMETER RoleServers
-        Hashtable mapping role names (Database, Web, Mail) to computer names.
-        WinRM may also be supplied to preserve management access on selected servers.
+        Hashtable mapping role names to computer names. Roles: Database, Web, Mail
+        (bundled firewall GPOs), and WinRM, SSH, RDP, FTP, SMB (service access GPOs).
         If omitted, the run offers computer selections for each role. Use -NoPrompt to
         skip role assignments when running unattended.
     .PARAMETER WinRMRemoteAddress
         Remote address or CIDR entries allowed to manage selected WinRM servers.
         Defaults to LocalSubnet.
+    .PARAMETER RoleRemoteAddress
+        Hashtable of remote address scopes for the WinRM, SSH, RDP, FTP, and SMB roles,
+        for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any (WinRM uses
+        -WinRMRemoteAddress).
     .PARAMETER NoPrompt
         Skip server role selection prompts. If Splunk is not skipped, pass -SplunkIP.
     .PARAMETER SplunkIP
@@ -61,6 +65,7 @@ function Invoke-DomainHardening {
         [string]$GpoCachePath,
         [hashtable]$RoleServers = @{},
         [string[]]$WinRMRemoteAddress = @('LocalSubnet'),
+        [hashtable]$RoleRemoteAddress = @{},
         [switch]$NoPrompt,
         [string]$SplunkIP,
         [switch]$SkipSplunk,
@@ -130,6 +135,10 @@ function Invoke-DomainHardening {
         @{ Role = 'Web';      Label = 'Web';      Step = 'Domain 9/13' }
         @{ Role = 'Mail';     Label = 'Mail';     Step = 'Domain 9/13' }
         @{ Role = 'WinRM';    Label = 'WinRM management'; Step = 'Domain 9/13' }
+        @{ Role = 'SSH';      Label = 'SSH';      Step = 'Domain 9/13' }
+        @{ Role = 'RDP';      Label = 'RDP';      Step = 'Domain 9/13' }
+        @{ Role = 'FTP';      Label = 'FTP (IIS FTP service)'; Step = 'Domain 9/13' }
+        @{ Role = 'SMB';      Label = 'SMB file sharing'; Step = 'Domain 9/13' }
     )
     foreach ($definition in $roleDefinitions) {
         $servers = @()
@@ -156,10 +165,13 @@ function Invoke-DomainHardening {
 
         if ($servers.Count -gt 0) {
             $script:NextStepLabel = $definition.Step
-            if ($roleKey -eq 'WinRM') {
-                Link-ServerWinRMGpo -ComputerName $servers -RemoteAddress $WinRMRemoteAddress
-            } else {
+            if ($roleKey -in @('Database', 'Web', 'Mail')) {
                 Link-ServerRoleGpo -Role $roleKey -ComputerName $servers -BackupRoot $backupRoot
+            } else {
+                $remoteAddress = if ($RoleRemoteAddress.ContainsKey($roleKey)) { @($RoleRemoteAddress[$roleKey]) }
+                    elseif ($roleKey -eq 'WinRM') { $WinRMRemoteAddress }
+                    else { $null }
+                Link-ServerServiceGpo -Role $roleKey -ComputerName $servers -RemoteAddress $remoteAddress
             }
         } else {
             Write-Status -Level Skip "No $($definition.Label) servers selected; role GPO not linked" -LogMessage "No $($definition.Role) role servers selected"

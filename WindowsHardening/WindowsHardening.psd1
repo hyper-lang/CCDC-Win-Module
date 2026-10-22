@@ -22,6 +22,7 @@
         'Link-DomainGoodGpo'
         'Link-ServerRoleGpo'
         'Link-ServerWinRMGpo'
+        'Link-ServerServiceGpo'
         'Add-DomainFirewallPortRule'
         'Remove-DomainFirewallPortRule'
 

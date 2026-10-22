@@ -218,35 +218,71 @@ function Set-CcdcGpoFirewallRule {
     New-NetFirewallRule -PolicyStore $policyStore -Action Allow -Enabled True @Rule -ErrorAction Stop | Out-Null
 }
 
-function Add-CcdcWinRMAccessGpo {
+# Role GPOs created from scratch (no bundled backup). Rules are inbound unless noted;
+# RemoteAddress is the default scope, overridable per call.
+$script:CcdcServiceRoles = @{
+    WinRM = @{
+        GpoName = 'CCDC Preserve WinRM'; RemoteAddress = @('LocalSubnet')
+        Rules = @(
+            # WinRM listens through HTTP.sys (System), so a -Service WinRM filter never matches.
+            @{ Name = 'CCDC-Allow-WinRM'; DisplayName = 'CCDC Preserve WinRM'; Protocol = 'TCP'; LocalPort = @('5985', '5986'); Program = 'System' }
+        )
+    }
+    SSH = @{
+        GpoName = 'CCDC SSH Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-SSH'; DisplayName = 'CCDC SSH (TCP-In)'; Protocol = 'TCP'; LocalPort = '22' }
+        )
+    }
+    RDP = @{
+        GpoName = 'CCDC RDP Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-RDP-TCP'; DisplayName = 'CCDC RDP (TCP-In)'; Protocol = 'TCP'; LocalPort = '3389' }
+            @{ Name = 'CCDC-Allow-RDP-UDP'; DisplayName = 'CCDC RDP (UDP-In)'; Protocol = 'UDP'; LocalPort = '3389' }
+        )
+    }
+    FTP = @{
+        GpoName = 'CCDC FTP Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-FTP'; DisplayName = 'CCDC FTP (TCP-In)'; Protocol = 'TCP'; LocalPort = '21' }
+            # Stateful FTP does not open passive data ports, and its GPO setting is not honored.
+            # These two follow the IIS FTP built-in rules, so they only match the ftpsvc service.
+            @{ Name = 'CCDC-Allow-FTP-Passive'; DisplayName = 'CCDC FTP Passive Data (TCP-In)'; Protocol = 'TCP'; LocalPort = '1024-65535'; Service = 'ftpsvc' }
+            @{ Name = 'CCDC-Allow-FTP-Active'; DisplayName = 'CCDC FTP Active Data (TCP-Out)'; Protocol = 'TCP'; LocalPort = '20'; Service = 'ftpsvc'; Direction = 'Outbound' }
+        )
+    }
+    SMB = @{
+        GpoName = 'CCDC SMB Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-SMB'; DisplayName = 'CCDC SMB (TCP-In)'; Protocol = 'TCP'; LocalPort = '445'; Program = 'System' }
+        )
+    }
+}
+
+function Add-CcdcServiceRoleGpo {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory=$true)][string]$Role,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
-        [string[]]$RemoteAddress = @('LocalSubnet')
+        [string[]]$RemoteAddress
     )
 
-    Import-Module NetSecurity -ErrorAction Stop
-    $gpoName = 'CCDC Preserve WinRM'
-    $domain = Get-ADDomain -ErrorAction Stop
-    $target = $domain.DistinguishedName
+    $definition = $script:CcdcServiceRoles[$Role]
+    if (-not $definition) { throw "Unknown service role '$Role'" }
+    if (-not $RemoteAddress) { $RemoteAddress = $definition.RemoteAddress }
+    $gpoName = $definition.GpoName
     $gpo = Get-GPO -Name $gpoName -ErrorAction Ignore
     if (-not $gpo) {
         $gpo = New-GPO -Name $gpoName -ErrorAction Stop
     }
 
-    $policyStore = "$($domain.DNSRoot)\$gpoName"
-    $existingRule = Get-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction Ignore
-    if ($existingRule) {
-        Remove-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction Stop
+    foreach ($rule in $definition.Rules) {
+        $ruleParams = @{ Direction = 'Inbound'; RemoteAddress = $RemoteAddress }
+        foreach ($key in $rule.Keys) { $ruleParams[$key] = $rule[$key] }
+        Set-CcdcGpoFirewallRule -GpoName $gpoName -Rule $ruleParams
     }
 
-    # WinRM listens through HTTP.sys (System), so a -Service WinRM filter never matches.
-    New-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' `
-        -DisplayName 'CCDC Preserve WinRM' -Description 'Allows WinRM management for selected servers.' `
-        -Direction Inbound -Action Allow -Protocol TCP -LocalPort @('5985', '5986') `
-        -Program 'System' -Profile Domain -RemoteAddress $RemoteAddress -Enabled True -ErrorAction Stop | Out-Null
-
-    Add-CcdcGpoLink -Name $gpo.DisplayName -Target $target -SecurityFilter $ComputerName
+    Add-CcdcGpoLink -Name $gpo.DisplayName -Target (Get-CcdcDomainRootDn) -SecurityFilter $ComputerName
     Write-Status -Level Success "Created/updated '$gpoName' for $($ComputerName -join ', ')" `
-        -LogMessage "Created/updated '$gpoName' for computer account(s): $($ComputerName -join ', ')"
+        -LogMessage "Created/updated '$gpoName' ($($RemoteAddress -join ', ')) for computer account(s): $($ComputerName -join ', ')"
 }

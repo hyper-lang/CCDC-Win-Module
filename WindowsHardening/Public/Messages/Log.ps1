@@ -104,6 +104,7 @@ $script:TrackedOperations = @(
     "Link DC Allow AD GPO", "Link Domain Firewall GPO", "Link Domain GPO Update Interval",
     "Link Domain Good-GPO", "Link Splunk Server GPO", "Link Database Server GPO",
     "Link Web Server GPO", "Link Mail Server GPO", "Link WinRM Management GPO",
+    "Link SSH Access GPO", "Link RDP Access GPO", "Link FTP Access GPO", "Link SMB Access GPO",
     "Refresh Group Policy",
     "Remove Admin Users", "Remove RDP Users", "Add RDP Users",
     "Change Administrator Password", "Zulu Passwords", "Add Competition Users", "Change Passwords", "Patch Mimikatz",
