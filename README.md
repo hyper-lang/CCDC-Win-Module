@@ -169,17 +169,25 @@ repository (or accepts a local archive with `-GpoZipPath`), imports the selected
 and links the policies. Existing same-name GPOs are updated from the backups.
 
 The sequence changes the Administrator password, cleans the domain admin groups, rotates
-Zulu passwords, and links `DC Allow AD` to the Domain Controllers OU. It links `Domain
+Zulu passwords, and links `DC Allow AD` to the Domain Controllers OU with its Domain
+firewall profile enabled, default inbound blocked, and default outbound allowed. It links `Domain
 Allow AD + Core + Default Block` to the domain root with a `Domain Computers` security
-filter, then links the update interval and `Domain Good-GPO` at the root. The firewall
-role policies are linked at the root and filtered to the selected computer accounts.
-Finally it runs `gpupdate /force`, configures Splunk if enabled, and creates CCDC users.
+filter, and links `Domain Splomk` outbound access for `Domain Computers` and
+`Domain Controllers`. It then links the update interval and `Domain Good-GPO` at the
+root. Database, web, mail, and WinRM role policies are linked at the root and filtered
+to the selected computer accounts. Optional named port exceptions are applied through
+targeted domain GPOs. Finally it runs `gpupdate /force`, configures Splunk if enabled,
+and creates CCDC users.
 WinRM is left running by this sequence.
 
-By default, the run prompts only for which computers need Splunk, database, web, mail, or
-WinRM management access, then for the Splunk indexer address. Use `-RoleServers` and
-`-SplunkIP` to supply those values. `-NoPrompt` skips role selection, so combine it with
-`-SkipSplunk` or `-SplunkIP`.
+By default, the run prompts for which Windows Server computers need database, web,
+mail, or WinRM management access, then for the Splunk indexer address. Splunk outbound
+TCP 9997 is linked for all domain computers and domain controllers.
+Domain controllers are included in those lists. Select multiple entries by entering
+their numbers separated by commas (for example `1,3`), or pass arrays through
+`-RoleServers`, such as `@{ Database = @('DB01','DB02') }`. Use `-SplunkIP` to supply
+the indexer address. `-NoPrompt` skips role selection, so combine it with `-SkipSplunk`
+or `-SplunkIP`.
 
 For selected WinRM servers, the run creates or updates a `CCDC Preserve WinRM` GPO with
 inbound TCP 5985/5986 access and a direct computer-account filter. Its remote address
@@ -190,13 +198,32 @@ WinRM service startup and state unchanged.
 Invoke-DomainHardening -SaltPhrase 'a long passphrase' -SkipSplunk
 
 Invoke-DomainHardening -NoPrompt -SaltPhrase 'a long passphrase' `
-    -RoleServers @{ Database = @('DB01'); Web = @('WEB01') } `
+    -RoleServers @{ Database = @('DB01','DB02'); Web = @('WEB01') } `
     -SplunkIP '10.0.0.20'
 ```
 
 The supplied domain firewall policy disables local firewall policy merging. A local
 firewall allow rule may therefore be ignored on computers receiving that GPO. Add
-exceptions to the domain policy or use a separately targeted GPO for those servers.
+exceptions with the functions below; each rule gets a separate domain GPO filtered to
+the specified computers. You can also pass the add/remove requests into
+`Invoke-DomainHardening` so the changes are followed by its `gpupdate /force` step.
+
+```powershell
+# Add inbound TCP 5432 only for DB01 and DB02
+Add-DomainFirewallPortRule -Name 'Postgres' -ComputerName DB01,DB02 -Port 5432
+
+# Add outbound TCP 9997 only for APP01, restricted to a specific indexer
+Add-DomainFirewallPortRule -Name 'SplunkIndexer' -ComputerName APP01 -Port 9997 `
+    -Direction Outbound -RemoteAddress 10.0.0.20
+
+# Remove a previously created rule and its dedicated GPO
+Remove-DomainFirewallPortRule -Name 'Postgres'
+
+# The same operations can be queued as part of the full domain workflow
+Invoke-DomainHardening -SkipPasswordChange -SkipSplunk `
+    -FirewallPortRulesToAdd @(@{ Name='Postgres'; ComputerName=@('DB01','DB02'); Port=5432 }) `
+    -FirewallPortRulesToRemove 'OldPort'
+```
 
 ```powershell
 Import-Module ./WindowsHardening -Force
@@ -393,9 +420,11 @@ execution policy is set to Restricted machine-wide, so new sessions need
 
 Runs on a domain controller. Downloads or accepts the GPO backup ZIP, imports the
 ActiveDirectory and GroupPolicy modules, imports the competition GPOs, then links the
-DC policy, domain firewall policy, update interval, domain baseline, and selected role
-firewall policies. It runs `gpupdate /force` before the final Splunk and CCDC account
-steps. See [Domain Hardening](#domain-hardening) for scopes and examples.
+DC policy, domain firewall policy, domain Splunk outbound policy, update interval,
+domain baseline, and selected role firewall policies. It can also add or remove named
+per-computer firewall GPO exceptions using `-FirewallPortRulesToAdd` and
+`-FirewallPortRulesToRemove`. It runs `gpupdate /force` before the final Splunk and
+CCDC account steps. See [Domain Hardening](#domain-hardening) for scopes and examples.
 
 ### `Protect-Mimikatz`
 

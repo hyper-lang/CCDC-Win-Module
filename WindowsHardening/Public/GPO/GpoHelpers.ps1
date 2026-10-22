@@ -86,31 +86,41 @@ function Set-CcdcGpoSecurityFilter {
         [string[]]$GroupName = @()
     )
 
-    # Replace broad default filters so the firewall role policies can be selected per server.
+    $existingPermissions = @(Get-GPPermission -Name $Name -All -ErrorAction Stop)
+
+    # Keep broad principals read-only so selected computer accounts control policy application.
     foreach ($principal in @(
         @{ Name = 'Authenticated Users'; Type = 'Group' }
         @{ Name = 'Domain Computers'; Type = 'Group' }
     )) {
-        try {
-            Set-GPPermissions -Name $Name -TargetName $principal.Name -TargetType $principal.Type -PermissionLevel None -ErrorAction Stop | Out-Null
-        } catch {
-            # A principal that is not on the GPO ACL needs no removal.
+        $existingPrincipal = @($existingPermissions | Where-Object {
+            $_.Trustee.Name -eq $principal.Name
+        })
+        if ($existingPrincipal) {
+            Set-GPPermissions -Name $Name -TargetName $principal.Name -TargetType $principal.Type `
+                -PermissionLevel GpoRead -Replace -Confirm:$false -ErrorAction Stop | Out-Null
         }
     }
 
-    foreach ($permission in Get-GPPermission -Name $Name -All -ErrorAction Stop) {
-        if ($permission.TrusteeType -eq 'Computer') {
-            Set-GPPermissions -Name $Name -TargetName $permission.Trustee -TargetType Computer -PermissionLevel None -ErrorAction Stop | Out-Null
+    foreach ($permission in $existingPermissions) {
+        $trusteeName = [string]$permission.Trustee.Name
+        if ($trusteeName.EndsWith('$', [StringComparison]::Ordinal)) {
+            Set-GPPermissions -Name $Name -TargetName $trusteeName -TargetType Computer `
+                -PermissionLevel GpoRead -Replace -Confirm:$false -ErrorAction Stop | Out-Null
         }
     }
 
-    foreach ($computerName in $ComputerName) {
-        $computer = Get-ADComputer -Identity $computerName -ErrorAction Stop
-        Set-GPPermissions -Name $Name -TargetName ($computer.SamAccountName) -TargetType Computer -PermissionLevel GpoApply -ErrorAction Stop | Out-Null
+    foreach ($computerIdentity in @($ComputerName | ForEach-Object { [string]$_ })) {
+        if ([string]::IsNullOrWhiteSpace($computerIdentity)) { continue }
+        $computer = Get-ADComputer -Identity $computerIdentity -ErrorAction Stop
+        Set-GPPermissions -Name $Name -TargetName ([string]$computer.SamAccountName) -TargetType Computer `
+            -PermissionLevel GpoApply -Replace -Confirm:$false -ErrorAction Stop | Out-Null
     }
 
-    foreach ($groupName in $GroupName) {
-        Set-GPPermissions -Name $Name -TargetName $groupName -TargetType Group -PermissionLevel GpoApply -ErrorAction Stop | Out-Null
+    foreach ($groupIdentity in @($GroupName | ForEach-Object { [string]$_ })) {
+        if ([string]::IsNullOrWhiteSpace($groupIdentity)) { continue }
+        Set-GPPermissions -Name $Name -TargetName $groupIdentity -TargetType Group `
+            -PermissionLevel GpoApply -Replace -Confirm:$false -ErrorAction Stop | Out-Null
     }
 }
 
@@ -197,13 +207,13 @@ function Add-CcdcWinRMAccessGpo {
     $gpoName = 'CCDC Preserve WinRM'
     $domain = Get-ADDomain -ErrorAction Stop
     $target = $domain.DistinguishedName
-    $gpo = Get-GPO -Name $gpoName -ErrorAction SilentlyContinue
+    $gpo = Get-GPO -Name $gpoName -ErrorAction Ignore
     if (-not $gpo) {
         $gpo = New-GPO -Name $gpoName -ErrorAction Stop
     }
 
     $policyStore = "$($domain.DNSRoot)\$gpoName"
-    $existingRule = Get-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction SilentlyContinue
+    $existingRule = Get-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction Ignore
     if ($existingRule) {
         Remove-NetFirewallRule -PolicyStore $policyStore -Name 'CCDC-Allow-WinRM' -ErrorAction Stop
     }

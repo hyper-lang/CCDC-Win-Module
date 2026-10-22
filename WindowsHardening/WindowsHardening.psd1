@@ -17,10 +17,13 @@
         # -- Public/GPO/ -----------------------------------------------------
         'Link-DcAllowAdGpo'
         'Link-DomainFirewallGpo'
+        'Link-DomainSplunkOutboundGpo'
         'Link-DomainGpoUpdateInterval'
         'Link-DomainGoodGpo'
         'Link-ServerRoleGpo'
         'Link-ServerWinRMGpo'
+        'Add-DomainFirewallPortRule'
+        'Remove-DomainFirewallPortRule'
 
         # -- Public/Users/ ---------------------------------------------------
         'Invoke-UserHardening'

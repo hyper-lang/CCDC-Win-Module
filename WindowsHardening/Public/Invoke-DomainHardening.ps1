@@ -10,8 +10,9 @@ function Invoke-DomainHardening {
         configuring Splunk when requested, and creating CCDC accounts.
 
         Role policies are linked at the domain root and filtered to the exact selected
-        computer accounts. The domain firewall policy is filtered to Domain Computers,
-        which excludes domain controllers. WinRM is left running by this sequence.
+        computer accounts. Domain Splunk outbound applies to Domain Computers and
+        Domain Controllers. The domain firewall policy excludes domain controllers.
+        WinRM is left running by this sequence.
     .PARAMETER SkipPasswordChange
         Skip the Administrator password change, Zulu rotation, and CCDC account creation.
     .PARAMETER SaltPhrase
@@ -22,7 +23,7 @@ function Invoke-DomainHardening {
     .PARAMETER GpoCachePath
         Folder used for the downloaded archive and extracted backups.
     .PARAMETER RoleServers
-        Hashtable mapping role names (Splunk, Database, Web, Mail) to computer names.
+        Hashtable mapping role names (Database, Web, Mail) to computer names.
         WinRM may also be supplied to preserve management access on selected servers.
         If omitted, the run offers computer selections for each role. Use -NoPrompt to
         skip role assignments when running unattended.
@@ -35,6 +36,11 @@ function Invoke-DomainHardening {
         Splunk indexer address. Prompts if omitted and Splunk installation is enabled.
     .PARAMETER SkipSplunk
         Skip the final Splunk installation step.
+    .PARAMETER FirewallPortRulesToAdd
+        Optional hashtables passed to Add-DomainFirewallPortRule. Each needs Name,
+        ComputerName, and Port; Protocol, Direction, and RemoteAddress are optional.
+    .PARAMETER FirewallPortRulesToRemove
+        Names of previously added domain port rules to remove.
     .PARAMETER LogPath
         Path for log files. Default: C:\Windows\Logs\Hardening.
     .EXAMPLE
@@ -55,6 +61,8 @@ function Invoke-DomainHardening {
         [switch]$NoPrompt,
         [string]$SplunkIP,
         [switch]$SkipSplunk,
+        [hashtable[]]$FirewallPortRulesToAdd = @(),
+        [string[]]$FirewallPortRulesToRemove = @(),
         [string]$LogPath
     )
 
@@ -84,39 +92,41 @@ function Invoke-DomainHardening {
     if ($SkipPasswordChange) {
         Write-Status -Level Skip 'Administrator password change, Zulu rotation, and CCDC account creation skipped (-SkipPasswordChange)'
     } else {
-        $script:NextStepLabel = 'Domain 1/11'
+        $script:NextStepLabel = 'Domain 1/13'
         Set-AdministratorPassword -SaltPhrase $SaltPhrase
     }
 
-    $script:NextStepLabel = 'Domain 2/11'
+    $script:NextStepLabel = 'Domain 2/13'
     Remove-AdminUsers
 
     if ($SkipPasswordChange) {
         Write-Status -Level Skip 'Zulu password rotation skipped (-SkipPasswordChange)'
     } else {
-        $script:NextStepLabel = 'Domain 3/11'
+        $script:NextStepLabel = 'Domain 3/13'
         Set-ZuluPassword -SaltPhrase $SaltPhrase
     }
 
     Write-Banner 'Link domain policies' -Style Inline -Log
-    $script:NextStepLabel = 'Domain 4/11'
+    $script:NextStepLabel = 'Domain 4/13'
     Link-DcAllowAdGpo -BackupRoot $backupRoot
 
-    $script:NextStepLabel = 'Domain 5/11'
+    $script:NextStepLabel = 'Domain 5/13'
     Link-DomainFirewallGpo -BackupRoot $backupRoot
 
-    $script:NextStepLabel = 'Domain 6/11'
+    $script:NextStepLabel = 'Domain 6/13'
+    Link-DomainSplunkOutboundGpo -BackupRoot $backupRoot
+
+    $script:NextStepLabel = 'Domain 7/13'
     Link-DomainGpoUpdateInterval -BackupRoot $backupRoot
 
-    $script:NextStepLabel = 'Domain 7/11'
+    $script:NextStepLabel = 'Domain 8/13'
     Link-DomainGoodGpo -BackupRoot $backupRoot
 
     $roleDefinitions = @(
-        @{ Role = 'Splunk';   Label = 'Splunk';   Step = 'Domain 8/11' }
-        @{ Role = 'Database'; Label = 'Database'; Step = 'Domain 8/11' }
-        @{ Role = 'Web';      Label = 'Web';      Step = 'Domain 8/11' }
-        @{ Role = 'Mail';     Label = 'Mail';     Step = 'Domain 8/11' }
-        @{ Role = 'WinRM';    Label = 'WinRM management'; Step = 'Domain 8/11' }
+        @{ Role = 'Database'; Label = 'Database'; Step = 'Domain 9/13' }
+        @{ Role = 'Web';      Label = 'Web';      Step = 'Domain 9/13' }
+        @{ Role = 'Mail';     Label = 'Mail';     Step = 'Domain 9/13' }
+        @{ Role = 'WinRM';    Label = 'WinRM management'; Step = 'Domain 9/13' }
     )
     foreach ($definition in $roleDefinitions) {
         $servers = @()
@@ -124,17 +134,19 @@ function Invoke-DomainHardening {
         if ($RoleServers.ContainsKey($roleKey)) {
             $servers = @($RoleServers[$roleKey] | Where-Object { $_ })
         } elseif (-not $NoPrompt) {
-            $domainControllerDns = @(Get-ADDomainController -Filter * -ErrorAction Stop | ForEach-Object { $_.ComputerObjectDN })
-            $computers = @(Get-ADComputer -Filter * -Properties OperatingSystem, Enabled -ErrorAction Stop |
-                Where-Object { $_.Enabled -and $_.OperatingSystem -match 'Server' -and $_.DistinguishedName -notin $domainControllerDns } |
+            $computers = @(Get-ADComputer -Filter * -Properties OperatingSystem, Enabled, PrimaryGroupID -ErrorAction Stop |
+                Where-Object { $_.Enabled -and $_.OperatingSystem -match 'Server' } |
                 Sort-Object Name)
             if ($computers.Count -gt 0) {
+                $optionNumber = 0
                 $options = @($computers | ForEach-Object {
-                    @{ Key = "$($_.Name)"; Label = "{0}{1}" -f $_.Name, $(if ($_.OperatingSystem) { " - $($_.OperatingSystem)" } else { '' }); Value = $_.Name }
+                    $optionNumber++
+                    $dcMarker = if ($_.PrimaryGroupID -eq 516) { ' - domain controller' } else { '' }
+                    @{ Key = "$optionNumber"; Label = "{0}{1}{2}" -f $_.Name, $(if ($_.OperatingSystem) { " - $($_.OperatingSystem)" } else { '' }), $dcMarker; Value = $_.Name }
                 })
                 $servers = Read-Choice -Title "$($definition.Label) servers" `
                     -Prompt "Select computers that need the $($definition.Label) policy" `
-                    -Options $options -Multiple -AllowEmpty -Hint 'Select server names; Enter = none'
+                    -Options $options -Multiple -AllowEmpty -Hint 'Enter one or more option numbers (for example 1,3); Enter = none'
                 if ($null -eq $servers) { $servers = @() }
             }
         }
@@ -151,8 +163,19 @@ function Invoke-DomainHardening {
         }
     }
 
+    $script:NextStepLabel = 'Domain 10/13'
+    foreach ($portRule in $FirewallPortRulesToAdd) {
+        Add-DomainFirewallPortRule @portRule
+    }
+    foreach ($portRuleName in $FirewallPortRulesToRemove) {
+        Remove-DomainFirewallPortRule -Name $portRuleName
+    }
+    if ($FirewallPortRulesToAdd.Count -eq 0 -and $FirewallPortRulesToRemove.Count -eq 0) {
+        Write-Status -Level Skip 'No additional domain firewall port rules requested'
+    }
+
     Write-Banner 'Refresh Group Policy' -Style Inline -Log
-    $script:NextStepLabel = 'Domain 9/11'
+    $script:NextStepLabel = 'Domain 11/13'
     Invoke-HardeningOperation -OperationName 'Refresh Group Policy' -ScriptBlock {
         try {
             Invoke-CcdcGpUpdate
@@ -168,14 +191,14 @@ function Invoke-DomainHardening {
         Write-Status -Level Skip 'Splunk installation skipped (-SkipSplunk)'
     } else {
         if (-not $SplunkIP) { $SplunkIP = Read-HostAddress -Prompt 'Splunk server IP' }
-        $script:NextStepLabel = 'Domain 10/11'
+        $script:NextStepLabel = 'Domain 12/13'
         Install-Splunk -IP $SplunkIP
     }
 
     if ($SkipPasswordChange) {
         Write-Status -Level Skip 'CCDC account creation skipped (-SkipPasswordChange)'
     } else {
-        $script:NextStepLabel = 'Domain 11/11'
+        $script:NextStepLabel = 'Domain 13/13'
         Create-CCDCUsers -SaltPhrase $SaltPhrase
     }
 
