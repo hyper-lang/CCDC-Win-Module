@@ -25,6 +25,9 @@ function Invoke-DomainHardening {
         BYU-CCDC public-ccdc-resources repository.
     .PARAMETER GpoCachePath
         Folder used for the downloaded archive and extracted backups.
+    .PARAMETER GpoBackupPath
+        Parent folder for the timestamped backup of the domain's existing GPOs.
+        Defaults to the hardening log folder.
     .PARAMETER RoleServers
         Hashtable mapping role names to computer names. Roles: Database, Web, Mail
         (bundled firewall GPOs), and WinRM, SSH, RDP, FTP, SMB (service access GPOs).
@@ -64,6 +67,7 @@ function Invoke-DomainHardening {
         [string]$SaltPhrase,
         [string]$GpoZipPath,
         [string]$GpoCachePath,
+        [string]$GpoBackupPath,
         [hashtable]$RoleServers = @{},
         [string[]]$WinRMRemoteAddress = @('LocalSubnet'),
         [hashtable]$RoleRemoteAddress = @{},
@@ -91,8 +95,6 @@ function Invoke-DomainHardening {
 
     try {
         Test-Prerequisites
-        Initialize-CcdcGpoEnvironment -GpoZipPath $GpoZipPath -GpoCachePath $GpoCachePath | Out-Null
-        $backupRoot = if ($GpoCachePath) { Join-Path $GpoCachePath 'Backups' } else { Join-Path ([System.IO.Path]::GetTempPath()) 'CCDC-GPOs\Backups' }
     } catch {
         Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)"
         throw
@@ -103,17 +105,24 @@ function Invoke-DomainHardening {
     } else {
         $script:NextStepLabel = 'Domain 1/13'
         Set-AdministratorPassword -SaltPhrase $SaltPhrase
-    }
-
-    $script:NextStepLabel = 'Domain 2/13'
-    Remove-AdminUsers
-
-    if ($SkipPasswordChange) {
-        Write-Status -Level Skip 'Zulu password rotation skipped (-SkipPasswordChange)'
-    } else {
-        $script:NextStepLabel = 'Domain 3/13'
+        $script:NextStepLabel = 'Domain 2/13'
         Set-ZuluPassword -SaltPhrase $SaltPhrase
     }
+
+    # Run password operations before downloading the packaged GPO archive or
+    # explicitly importing the GroupPolicy/ActiveDirectory modules for GPO setup.
+    try {
+        Initialize-CcdcGpoEnvironment -GpoZipPath $GpoZipPath -GpoCachePath $GpoCachePath | Out-Null
+        $backupRoot = if ($GpoCachePath) { Join-Path $GpoCachePath 'Backups' } else { Join-Path ([System.IO.Path]::GetTempPath()) 'CCDC-GPOs\Backups' }
+        $domainGpoBackup = Backup-DomainGpos -Path $GpoBackupPath
+        Write-Status "Pre-hardening domain GPO backup: $domainGpoBackup"
+    } catch {
+        Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)"
+        throw
+    }
+
+    $script:NextStepLabel = 'Domain 3/13'
+    Remove-AdminUsers
 
     Write-Banner 'Link domain policies' -Style Inline -Log
     $script:NextStepLabel = 'Domain 4/13'

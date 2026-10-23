@@ -15,6 +15,7 @@
         'Invoke-HardeningMenu'
 
         # -- Public/GPO/ -----------------------------------------------------
+        'Backup-DomainGpos'
         'Link-DcAllowAdGpo'
         'Link-DomainFirewallGpo'
         'Link-DomainSplunkOutboundGpo'
