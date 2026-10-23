@@ -173,7 +173,8 @@ Zulu passwords, and links `Domain Allow AD + Core + Default Block` to the domain
 every computer, domain controllers included: all firewall profiles on, default inbound and
 outbound blocked, local rules ignored, plus an added outbound NTP (UDP 123) rule. `DC Allow AD`
 is linked to the Domain Controllers OU and layers the DC inbound rules on top, with added DFS
-Replication rules (`dfsrs.exe` RPC in and TCP out) for SYSVOL. It links `Domain Splomk` outbound access for `Domain Computers` and
+Replication rules (`dfsrs.exe` RPC in and TCP out) for SYSVOL, and outbound RPC (TCP 135 and
+49152-65535) limited to the domain controllers' own addresses, read from AD on each run. It links `Domain Splomk` outbound access for `Domain Computers` and
 `Domain Controllers`. It then links the update interval and `Domain Good-GPO` at the
 root. These baseline links are **enforced**, so a GPO linked on an OU cannot override
 them (for example by turning the firewall off) and Block Inheritance on an OU cannot
@@ -242,6 +243,25 @@ Invoke-DomainHardening -SkipPasswordChange -SkipSplunk `
     -FirewallPortRulesToAdd @(@{ Name='Postgres'; ComputerName=@('DB01','DB02'); Port=5432 }) `
     -FirewallPortRulesToRemove 'OldPort'
 ```
+
+Outbound RPC to the domain controllers is allowed only from the DCs themselves. A member
+cannot open RPC sessions to a DC, which blocks DCSync and WMI/DCOM from a compromised
+member. Members that need it get a targeted exception. Examples: a certificate authority or
+Exchange server, or a server about to be promoted to a DC (promotion fails with "Access
+is denied" without it).
+
+```powershell
+$dcIPs = Get-ADDomainController -Filter * | ForEach-Object IPv4Address
+Add-DomainFirewallPortRule -Name 'RPC-To-DCs' -ComputerName NEWDC01 -Port 135, '49152-65535' `
+    -Direction Outbound -RemoteAddress $dcIPs
+# gpupdate /force on NEWDC01, promote it, then:
+Remove-DomainFirewallPortRule -Name 'RPC-To-DCs'
+```
+
+The DC list is a snapshot. After adding a DC or changing a DC's IP address, rerun
+`Invoke-DomainHardening` on the PDC emulator to refresh it. AD replication itself does not
+depend on this rule. Without the refresh, tools running on a DC (rerunning the hardening,
+`repadmin`) cannot reach the new DC over RPC.
 
 ```powershell
 Import-Module ./WindowsHardening -Force

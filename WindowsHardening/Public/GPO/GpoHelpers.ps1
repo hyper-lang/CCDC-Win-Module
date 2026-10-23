@@ -222,7 +222,7 @@ function Set-CcdcGpoFirewallRule {
 # RemoteAddress is the default scope, overridable per call.
 $script:CcdcServiceRoles = @{
     WinRM = @{
-        GpoName = 'CCDC Preserve WinRM'; RemoteAddress = @('LocalSubnet')
+        GpoName = 'CCDC Preserve WinRM'; RemoteAddress = @('Any')
         Rules = @(
             # WinRM listens through HTTP.sys (System), so a -Service WinRM filter never matches.
             @{ Name = 'CCDC-Allow-WinRM'; DisplayName = 'CCDC Preserve WinRM'; Protocol = 'TCP'; LocalPort = @('5985', '5986'); Program = 'System' }

@@ -10,7 +10,7 @@ function Link-ServerWinRMGpo {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
-        [string[]]$RemoteAddress = @('LocalSubnet')
+        [string[]]$RemoteAddress = @('Any')
     )
 
     Link-ServerServiceGpo -Role WinRM -ComputerName $ComputerName -RemoteAddress $RemoteAddress

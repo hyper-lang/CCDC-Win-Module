@@ -8,7 +8,7 @@ function Link-ServerServiceGpo {
         5985/5986, SSH TCP 22, RDP TCP/UDP 3389, FTP TCP 21 plus IIS (ftpsvc) passive and
         active data, SMB TCP 445. The services themselves are left in their current state.
     .PARAMETER RemoteAddress
-        Remote addresses allowed. Defaults to LocalSubnet for WinRM and Any for the others.
+        Remote addresses allowed. Defaults to Any for all service roles, including WinRM.
     .EXAMPLE
         Link-ServerServiceGpo -Role SSH -ComputerName LINUXGW01, FILE01
     #>
