@@ -197,7 +197,7 @@ The services themselves are left as they are:
 
 | Role | GPO | Inbound allow | Default remote scope |
 |---|---|---|---|
-| WinRM | `CCDC Preserve WinRM` | TCP 5985, 5986 (System) | `LocalSubnet` (`-WinRMRemoteAddress`) |
+| WinRM | `CCDC Preserve WinRM` | TCP 5985, 5986 (System) | Any (`-WinRMRemoteAddress`) |
 | SSH | `CCDC SSH Access` | TCP 22 | Any |
 | RDP | `CCDC RDP Access` | TCP and UDP 3389 | Any |
 | FTP | `CCDC FTP Access` | TCP 21; passive data TCP 1024-65535 and active data out from TCP 20, both limited to the IIS `ftpsvc` service | Any |

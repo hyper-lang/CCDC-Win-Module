@@ -35,7 +35,7 @@ function Invoke-DomainHardening {
         skip role assignments when running unattended.
     .PARAMETER WinRMRemoteAddress
         Remote address or CIDR entries allowed to manage selected WinRM servers.
-        Defaults to LocalSubnet.
+        Defaults to Any for WinRM GPOs linked by Invoke-DomainHardening.
     .PARAMETER RoleRemoteAddress
         Hashtable of remote address scopes for the WinRM, SSH, RDP, FTP, and SMB roles,
         for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any (WinRM uses
@@ -69,7 +69,7 @@ function Invoke-DomainHardening {
         [string]$GpoCachePath,
         [string]$GpoBackupPath,
         [hashtable]$RoleServers = @{},
-        [string[]]$WinRMRemoteAddress = @('LocalSubnet'),
+        [string[]]$WinRMRemoteAddress = @('Any'),
         [hashtable]$RoleRemoteAddress = @{},
         [switch]$NoPrompt,
         [string]$SplunkIP,
