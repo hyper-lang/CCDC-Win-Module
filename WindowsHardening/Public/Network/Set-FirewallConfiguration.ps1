@@ -126,7 +126,7 @@ function Set-FirewallConfiguration {
                 try {
                     $promptedPorts = Read-Choice -Title "Additional Ports" -Prompt "Any additional ports to open" -Options @() `
                         -Multiple -AllowCustom -AllowEmpty `
-                        -Hint "enter port numbers separated by commas; Enter = none" `
+                        -Hint "enter port numbers separated by commas" `
                         -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
                 } catch {
                     # No console (e.g. over WinRM): still apply the firewall, just without extras.

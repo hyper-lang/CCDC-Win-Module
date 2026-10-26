@@ -168,7 +168,7 @@ function Invoke-DomainHardening {
                 })
                 $servers = Read-Choice -Title "$($definition.Label) servers" `
                     -Prompt "Select computers that need the $($definition.Label) policy" `
-                    -Options $options -Multiple -AllowEmpty -Hint 'Enter one or more option numbers (for example 1,3); Enter = none'
+                    -Options $options -Multiple -AllowEmpty -Hint 'Enter one or more option numbers (for example 1,3)'
                 if ($null -eq $servers) { $servers = @() }
             }
         }
