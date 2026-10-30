@@ -278,6 +278,9 @@ Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -NoPrompt
 # Keep WinRM reachable (e.g. applied over a remote session)
 Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk -NoPrompt -PreserveManagementPort
 
+# Preserve the existing firewall configuration and rules
+Invoke-WindowsHardening -SkipFirewall -SkipPasswordChange -SkipSplunk
+
 # Skip password change and RDP-user reset
 Invoke-WindowsHardening -SkipPasswordChange -SkipRDP -SkipSplunk
 
@@ -295,6 +298,11 @@ is needed; answer Yes to keep it enabled or No to disable it. `-NoPrompt` skips 
 RDP, and extra-port questions. WinRM is disabled unless `-SkipWinRM` or
 `-PreserveManagementPort` is given; RDP is disabled unless `-SkipRDP` is given. Required password or Splunk
 prompts still occur unless their values or skip switches are provided.
+
+Use `-SkipFirewall` to leave the existing firewall configuration and rules unchanged. This skips
+firewall configuration, ZeroLogon firewall-rule changes, and firewall-rule cleanup during remote
+management teardown. WinRM/RDP service choices and the other hardening steps still run; firewall
+port parameters are ignored.
 
 Optionally take a backup first (experimental):
 
@@ -445,6 +453,7 @@ operation is counted so one failure is reported without stopping the rest. See
 ```powershell
 Invoke-WindowsHardening -SaltPhrase "a long passphrase" -SkipSplunk
 Invoke-WindowsHardening -FirewallPorts "80, 443" -SaltPhrase "a long passphrase" -SplunkIP 10.0.0.5
+Invoke-WindowsHardening -SkipFirewall -SkipPasswordChange -SkipSplunk
 ```
 
 Without `-FirewallPorts`, a domain controller gets the common AD ports and any
@@ -456,6 +465,10 @@ The RDP prompt asks whether RDP is needed: Yes keeps RDP enabled, No disables it
 disables it without asking. `-PreserveManagementPort` has the same keep effect. The
 execution policy is set to Restricted machine-wide, so new sessions need
 `-ExecutionPolicy Bypass` to load the module afterwards.
+
+`-SkipFirewall` leaves existing firewall settings and rules untouched, skips ZeroLogon firewall
+changes and firewall-rule removals during remote-management cleanup, and ignores
+`-FirewallPorts`/`-AdditionalPorts`. Other hardening still runs, including WinRM/RDP service choices.
 
 ### `Invoke-DomainHardening`
 
@@ -616,6 +629,7 @@ Commonly used parameters and their short aliases:
 | `-SkipRDP` | `-srdp` | `Invoke-WindowsHardening` |
 | `-SkipWinRM` | `-swrm` | `Invoke-WindowsHardening` |
 | `-DisableWinRM` | `-dwrm` | `Invoke-WindowsHardening` |
+| `-SkipFirewall` | — | `Invoke-WindowsHardening` |
 | `-FirewallPorts` | `-f` | `Invoke-WindowsHardening`, `Set-FirewallConfiguration` |
 | `-AdditionalPorts` | `-ap` | `Invoke-WindowsHardening` |
 | `-SaltPhrase` | `-s` | `Invoke-WindowsHardening`, `Invoke-HardeningMenu`, `Invoke-UserHardening` |
@@ -631,6 +645,7 @@ Commonly used parameters and their short aliases:
 | `-DisableRDP` / `-drdp` | switch | `$false` | Disable RDP and reset the RDP group, without asking. With neither RDP switch, the run asks whether RDP is needed after SMB hardening |
 | `-SkipWinRM` / `-swrm` | switch | `$false` | Keep WinRM enabled and allow TCP 5985/5986, without asking |
 | `-DisableWinRM` / `-dwrm` | switch | `$false` | Disable WinRM without adding its standard firewall allow rules, without asking. With neither WinRM switch nor `-PreserveManagementPort`, the run asks before configuring the firewall |
+| `-SkipFirewall` | switch | `$false` | Leave existing firewall configuration/rules unchanged; skips firewall configuration, ZeroLogon firewall changes, and firewall-rule removals during cleanup. Other hardening and service choices still run; ignores `-FirewallPorts` and `-AdditionalPorts` |
 | `-FirewallPorts` / `-f` | string[] | AD ports on a DC, none otherwise | Ports to allow; supports comma-separated (`"80, 443"`) |
 | `-AdditionalPorts` / `-ap` | string[] | — | Extra ports allowed on top of `-FirewallPorts` or the defaults |
 | `-NoPrompt` | switch | `$false` | Don't ask whether WinRM or RDP is needed (both are disabled unless their keep switch is given) or for extra firewall ports |

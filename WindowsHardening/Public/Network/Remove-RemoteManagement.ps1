@@ -9,14 +9,15 @@
 
           1. WinRM             - Runs Disable-PSRemoting, removes all HTTP/HTTPS listeners,
                                  stops and disables the WinRM service, and removes WinRM
-                                 firewall rules (5985/5986).
+                                 firewall rules (5985/5986) unless -SkipFirewallRules.
           2. Remote Registry   - Stops and disables the RemoteRegistry service so attackers
                                  cannot read or write registry hives over the network.
           3. RDP               - Sets fDenyTSConnections=1 (disables RDP completely),
                                  enforces NLA (UserAuthentication=1), and removes the
-                                 Remote Desktop firewall rule group.
+                                 Remote Desktop firewall rule group unless -SkipFirewallRules.
           4. SSH (optional)    - If the OpenSSH Server service (sshd) is present, stops
-                                 and disables it and removes the OpenSSH firewall rule.
+                                 and disables it and removes the OpenSSH firewall rule unless
+                                 -SkipFirewallRules.
           5. Telnet client     - Removes the Telnet-Client Windows feature if installed.
 
         All operations are wrapped in try/catch so a single failure does not abort
@@ -38,6 +39,10 @@
         Skip the WinRM-disable step.  Useful when running this function from a
         WinRM session you still need (run it last, or handle the disconnect).
 
+    .PARAMETER SkipFirewallRules
+        Leave firewall rules unchanged. Also skips Disable-PSRemoting because it can
+        modify WinRM firewall exceptions; service and listener cleanup still runs.
+
     .EXAMPLE
         Remove-RemoteManagement
         # Disables WinRM, Remote Registry, RDP, and SSH (if present).
@@ -55,7 +60,8 @@
     param(
         [switch]$SkipRDP,
         [switch]$SkipSSH,
-        [switch]$SkipWinRM
+        [switch]$SkipWinRM,
+        [switch]$SkipFirewallRules
     )
 
     Invoke-HardeningOperation -OperationName "Remove Remote Management" -ScriptBlock {
@@ -65,15 +71,19 @@
             Write-Host ""
             Write-Status -Tag WinRM "Disabling Windows Remote Management..."
 
-            try {
-                # Suppress the progress bar that Disable-PSRemoting writes
-                $oldPref = $ProgressPreference
-                $ProgressPreference = 'SilentlyContinue'
-                Disable-PSRemoting -Force -ErrorAction SilentlyContinue
-                $ProgressPreference = $oldPref
-                Write-Status -Level Success -Tag WinRM "PS remoting disabled" -LogMessage "Disabled PS remoting"
-            } catch {
-                Write-Status -Level Warning -Tag WinRM "Disable-PSRemoting: $($_.Exception.Message)" -LogMessage "Disable-PSRemoting failed: $($_.Exception.Message)"
+            if ($SkipFirewallRules) {
+                Write-Status -Level Skip -Tag WinRM "Disable-PSRemoting skipped to preserve firewall rules"
+            } else {
+                try {
+                    # Suppress the progress bar that Disable-PSRemoting writes
+                    $oldPref = $ProgressPreference
+                    $ProgressPreference = 'SilentlyContinue'
+                    Disable-PSRemoting -Force -ErrorAction SilentlyContinue
+                    $ProgressPreference = $oldPref
+                    Write-Status -Level Success -Tag WinRM "PS remoting disabled" -LogMessage "Disabled PS remoting"
+                } catch {
+                    Write-Status -Level Warning -Tag WinRM "Disable-PSRemoting: $($_.Exception.Message)" -LogMessage "Disable-PSRemoting failed: $($_.Exception.Message)"
+                }
             }
 
             # Remove all WinRM listeners
@@ -102,17 +112,21 @@
             }
 
             # Remove WinRM firewall rules (5985 HTTP, 5986 HTTPS)
-            try {
-                $winrmRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                    Where-Object { $_.DisplayName -match 'WinRM|Windows Remote Management' }
-                if ($winrmRules) {
-                    $winrmRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-                    Write-Status -Level Success -Tag WinRM "Firewall rules removed ($($winrmRules.Count) rule(s))" -LogMessage "Removed $($winrmRules.Count) WinRM firewall rule(s)"
-                } else {
-                    Write-Status -Level Warning -Tag WinRM "No WinRM firewall rules found"
+            if ($SkipFirewallRules) {
+                Write-Status -Level Skip -Tag WinRM "Firewall rules left unchanged (-SkipFirewallRules)"
+            } else {
+                try {
+                    $winrmRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                        Where-Object { $_.DisplayName -match 'WinRM|Windows Remote Management' }
+                    if ($winrmRules) {
+                        $winrmRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                        Write-Status -Level Success -Tag WinRM "Firewall rules removed ($($winrmRules.Count) rule(s))" -LogMessage "Removed $($winrmRules.Count) WinRM firewall rule(s)"
+                    } else {
+                        Write-Status -Level Warning -Tag WinRM "No WinRM firewall rules found"
+                    }
+                } catch {
+                    Write-Status -Level Warning -Tag WinRM "Could not remove firewall rules: $($_.Exception.Message)" -LogMessage "Could not remove WinRM firewall rules: $($_.Exception.Message)"
                 }
-            } catch {
-                Write-Status -Level Warning -Tag WinRM "Could not remove firewall rules: $($_.Exception.Message)" -LogMessage "Could not remove WinRM firewall rules: $($_.Exception.Message)"
             }
         } else {
             Write-Status -Level Skip -Tag WinRM "SKIPPED (SkipWinRM specified)" -LogMessage "WinRM disable step skipped per -SkipWinRM"
@@ -158,21 +172,25 @@
             }
 
             # Remove RDP firewall rules
-            try {
-                $rdpRules = Get-NetFirewallRule -Group '@FirewallAPI.dll,-28752' -ErrorAction Ignore
-                if (-not $rdpRules) {
-                    # Fallback: match by display name
-                    $rdpRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                        Where-Object { $_.DisplayName -match 'Remote Desktop' }
+            if ($SkipFirewallRules) {
+                Write-Status -Level Skip -Tag RDP "Firewall rules left unchanged (-SkipFirewallRules)"
+            } else {
+                try {
+                    $rdpRules = Get-NetFirewallRule -Group '@FirewallAPI.dll,-28752' -ErrorAction Ignore
+                    if (-not $rdpRules) {
+                        # Fallback: match by display name
+                        $rdpRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                            Where-Object { $_.DisplayName -match 'Remote Desktop' }
+                    }
+                    if ($rdpRules) {
+                        $rdpRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                        Write-Status -Level Success -Tag RDP "Firewall rules removed ($($rdpRules.Count) rule(s))" -LogMessage "Removed $($rdpRules.Count) RDP firewall rule(s)"
+                    } else {
+                        Write-Status -Level Warning -Tag RDP "No RDP firewall rules found"
+                    }
+                } catch {
+                    Write-Status -Level Warning -Tag RDP "Could not remove RDP firewall rules: $($_.Exception.Message)"
                 }
-                if ($rdpRules) {
-                    $rdpRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-                    Write-Status -Level Success -Tag RDP "Firewall rules removed ($($rdpRules.Count) rule(s))" -LogMessage "Removed $($rdpRules.Count) RDP firewall rule(s)"
-                } else {
-                    Write-Status -Level Warning -Tag RDP "No RDP firewall rules found"
-                }
-            } catch {
-                Write-Status -Level Warning -Tag RDP "Could not remove RDP firewall rules: $($_.Exception.Message)"
             }
 
             # Stop TermService (Remote Desktop Services). Stop-Service would block until the
@@ -211,12 +229,16 @@
                     Set-Service  -Name sshd -StartupType Disabled -ErrorAction Stop
                     Write-Status -Level Success -Tag SSH "OpenSSH Server stopped and disabled" -LogMessage "sshd service stopped and disabled"
 
-                    # Remove SSH firewall rule
-                    $sshRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                        Where-Object { $_.DisplayName -match 'SSH|OpenSSH' }
-                    if ($sshRules) {
-                        $sshRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-                        Write-Status -Level Success -Tag SSH "Firewall rules removed ($($sshRules.Count) rule(s))" -LogMessage "Removed $($sshRules.Count) SSH firewall rule(s)"
+                    if ($SkipFirewallRules) {
+                        Write-Status -Level Skip -Tag SSH "Firewall rules left unchanged (-SkipFirewallRules)"
+                    } else {
+                        # Remove SSH firewall rule
+                        $sshRules = Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                            Where-Object { $_.DisplayName -match 'SSH|OpenSSH' }
+                        if ($sshRules) {
+                            $sshRules | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+                            Write-Status -Level Success -Tag SSH "Firewall rules removed ($($sshRules.Count) rule(s))" -LogMessage "Removed $($sshRules.Count) SSH firewall rule(s)"
+                        }
                     }
                 } else {
                     Write-Status -Tag SSH "OpenSSH Server not installed - skipping" -LogMessage "sshd service not found - SSH skip"

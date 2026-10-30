@@ -9,8 +9,8 @@
           1. Set-AdministratorPassword    - unless -SkipPasswordChange
           2. Remove-AdminUsers
           3. Set-ZuluPassword             - existing accounts, unless -SkipPasswordChange
-          4. Ask whether WinRM is needed, then configure the firewall accordingly
-          5. Mitigate-ZeroLogon
+          4. Ask whether WinRM is needed, then configure the firewall accordingly (unless -SkipFirewall)
+          5. Mitigate-ZeroLogon (unless -SkipFirewall)
           6. Mitigate-EternalBlue
           7. Ask whether RDP is needed, then apply RDP group/service changes
           8. Protect-Mimikatz
@@ -29,6 +29,11 @@
         the RDP choice. A skilled operator should account for possible session loss. To pick
         individual steps or sections instead, use
         Invoke-HardeningMenu.
+    .PARAMETER SkipFirewall
+        Leave the existing firewall configuration and rules unchanged. Skips firewall
+        configuration, ZeroLogon firewall-rule changes, and firewall-rule removal during
+        remote-management cleanup. Other hardening and service choices still run.
+        -FirewallPorts and -AdditionalPorts are ignored.
     .PARAMETER SkipPasswordChange
         Skip the Administrator password change, Zulu rotation, and CCDC account creation. Alias: -sp.
     .PARAMETER SkipRDP
@@ -87,6 +92,8 @@
         [Alias("dwrm")]
         [switch]$DisableWinRM,
 
+        [switch]$SkipFirewall,
+
         [Alias("f")]
         [string[]]$FirewallPorts,
 
@@ -116,12 +123,17 @@
     if ($PreserveManagementPort) { $SkipWinRM = $true }
 
     # -- FirewallPorts parsing ----------------------------------------------
-    try {
-        $ports = ConvertTo-PortList -Ports $FirewallPorts
-        $extraPorts = ConvertTo-PortList -Ports $AdditionalPorts
-    } catch {
-        Write-Status -Level Error "Failed to parse FirewallPorts parameter: $($_.Exception.Message)"
-        throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
+    if ($SkipFirewall) {
+        $ports = @()
+        $extraPorts = @()
+    } else {
+        try {
+            $ports = ConvertTo-PortList -Ports $FirewallPorts
+            $extraPorts = ConvertTo-PortList -Ports $AdditionalPorts
+        } catch {
+            Write-Status -Level Error "Failed to parse FirewallPorts parameter: $($_.Exception.Message)"
+            throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
+        }
     }
     if ($ports.Count -gt 0) {
         Write-Status "Firewall ports provided via parameter: $($ports -join ', ')"
@@ -188,7 +200,14 @@
         Write-Status "RDP group reset and RDP disable will be skipped (RDP stays enabled)"
     }
     if ($SkipWinRM) {
-        Write-Status "WinRM will be kept enabled and TCP 5985/5986 will be allowed"
+        if ($SkipFirewall) {
+            Write-Status "WinRM will be kept enabled; firewall rules will remain unchanged (-SkipFirewall)"
+        } else {
+            Write-Status "WinRM will be kept enabled and TCP 5985/5986 will be allowed"
+        }
+    }
+    if ($SkipFirewall) {
+        Write-Status -Level Skip "Firewall configuration and firewall rule changes will be skipped (-SkipFirewall)"
     }
 
     Write-Banner "Step 1/13: Change Administrator password" -Style Inline -Log
@@ -218,10 +237,12 @@
         } else {
             Write-Host ""
             Write-Status -Level Warning "Disabling WinRM can end a WinRM session to this machine." -NoLog
+            $keepWinRMLabel = if ($SkipFirewall) { 'Yes - keep WinRM enabled' } else { 'Yes - keep WinRM enabled and allow TCP 5985/5986' }
+            $disableWinRMLabel = if ($SkipFirewall) { 'No  - disable WinRM' } else { 'No  - disable WinRM without preserving its firewall ports' }
             try {
                 $winrmChoice = Read-Choice -Prompt "Is WinRM needed on this machine?" -Default 'Y' -Options @(
-                    @{ Key = 'Y'; Label = 'Yes - keep WinRM enabled and allow TCP 5985/5986'; Value = 'keep' }
-                    @{ Key = 'N'; Label = 'No  - disable WinRM without preserving its firewall ports'; Value = 'disable' }
+                    @{ Key = 'Y'; Label = $keepWinRMLabel; Value = 'keep' }
+                    @{ Key = 'N'; Label = $disableWinRMLabel; Value = 'disable' }
                 )
                 $SkipWinRM = $winrmChoice -eq 'keep'
             } catch {
@@ -234,11 +255,19 @@
 
     Write-Banner "Step 4/13: Configure firewall" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 4/13'
-    Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$SkipWinRM
+    if ($SkipFirewall) {
+        Write-Status -Level Skip "Firewall configuration skipped (-SkipFirewall)"
+    } else {
+        Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$SkipWinRM
+    }
 
     Write-Banner "Step 5/13: Mitigate ZeroLogon" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 5/13'
-    Mitigate-ZeroLogon
+    if ($SkipFirewall) {
+        Write-Status -Level Skip "ZeroLogon firewall rule changes skipped (-SkipFirewall)"
+    } else {
+        Mitigate-ZeroLogon
+    }
 
     Write-Banner "Step 6/13: Mitigate EternalBlue (SMBv1)" -Style Inline -Log
     $script:NextStepLabel = 'Full Run 6/13'
@@ -283,6 +312,7 @@
     $remoteManagementArgs = @{}
     if ($SkipWinRM) { $remoteManagementArgs.SkipWinRM = $true }
     if ($SkipRDP) { $remoteManagementArgs.SkipRDP = $true }
+    if ($SkipFirewall) { $remoteManagementArgs.SkipFirewallRules = $true }
     Remove-RemoteManagement @remoteManagementArgs
 
     Write-Banner "Step 10/13: Disable unused network protocols" -Style Inline -Log
