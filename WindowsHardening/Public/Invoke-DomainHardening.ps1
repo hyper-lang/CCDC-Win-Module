@@ -29,17 +29,18 @@ function Invoke-DomainHardening {
         Parent folder for the timestamped backup of the domain's existing GPOs.
         Defaults to the hardening log folder.
     .PARAMETER RoleServers
-        Hashtable mapping role names to computer names. Roles: Database, Web, Mail
-        (bundled firewall GPOs), and WinRM, SSH, RDP, FTP, SMB (service access GPOs).
+        Hashtable mapping role names to computer names. Database creates an MSSQL firewall
+        GPO (TCP 1433 and UDP 1434); Web and Mail use bundled firewall GPOs. WinRM, SSH,
+        RDP, FTP, and SMB create service access GPOs.
         If omitted, the run offers computer selections for each role. Use -NoPrompt to
         skip role assignments when running unattended.
     .PARAMETER WinRMRemoteAddress
         Remote address or CIDR entries allowed to manage selected WinRM servers.
         Defaults to Any for WinRM GPOs linked by Invoke-DomainHardening.
     .PARAMETER RoleRemoteAddress
-        Hashtable of remote address scopes for the WinRM, SSH, RDP, FTP, and SMB roles,
-        for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any (WinRM uses
-        -WinRMRemoteAddress).
+        Hashtable of remote address scopes for the Database, WinRM, SSH, RDP, FTP, and
+        SMB roles, for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any (WinRM
+        uses -WinRMRemoteAddress).
     .PARAMETER NoPrompt
         Skip server role selection prompts. If Splunk is not skipped, pass -SplunkIP.
     .PARAMETER SplunkIP
@@ -175,7 +176,7 @@ function Invoke-DomainHardening {
 
         if ($servers.Count -gt 0) {
             $script:NextStepLabel = $definition.Step
-            if ($roleKey -in @('Database', 'Web', 'Mail')) {
+            if ($roleKey -in @('Web', 'Mail')) {
                 Link-ServerRoleGpo -Role $roleKey -ComputerName $servers -BackupRoot $backupRoot
             } else {
                 $remoteAddress = if ($RoleRemoteAddress.ContainsKey($roleKey)) { @($RoleRemoteAddress[$roleKey]) }

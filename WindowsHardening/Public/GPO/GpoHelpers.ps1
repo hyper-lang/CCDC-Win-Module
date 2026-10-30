@@ -9,7 +9,6 @@ $script:CcdcGpoBackups = @{
     'Domain Good-GPO' = '{9CDD7733-36C7-4306-B831-03C4C6D3FC80}'
     'Good-GPO' = '{F99C9DC5-C9F8-4C54-855D-23CA91CA7E7E}'
     'Domain Splomk' = '{2171A7B4-C5F4-4F48-A64B-4E95C605FB3C}'
-    'Databases Firewall Policy' = '{CC6E58C4-ABB0-4C5C-B0D5-9E8C56FB2FEC}'
     'Web Servers Firewall Policy' = '{00C38CA9-A53C-4CCF-A15F-E5BF927C43CE}'
     'Mail Servers Firewall Policy' = '{878525BA-78FC-4D60-B2A1-C66E712A6EAD}'
 }
@@ -221,6 +220,13 @@ function Set-CcdcGpoFirewallRule {
 # Role GPOs created from scratch (no bundled backup). Rules are inbound unless noted;
 # RemoteAddress is the default scope, overridable per call.
 $script:CcdcServiceRoles = @{
+    Database = @{
+        GpoName = 'CCDC MSSQL Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-MSSQL-TCP'; DisplayName = 'CCDC MSSQL (TCP-In)'; Protocol = 'TCP'; LocalPort = '1433' }
+            @{ Name = 'CCDC-Allow-MSSQL-Browser-UDP'; DisplayName = 'CCDC MSSQL Browser (UDP-In)'; Protocol = 'UDP'; LocalPort = '1434' }
+        )
+    }
     WinRM = @{
         GpoName = 'CCDC Preserve WinRM'; RemoteAddress = @('Any')
         Rules = @(

@@ -8,7 +8,7 @@ function Link-ServerRoleGpo {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)][ValidateSet('Database', 'Web', 'Mail')][string]$Role,
+        [Parameter(Mandatory=$true)][ValidateSet('Web', 'Mail')][string]$Role,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
         [Parameter(Mandatory=$true)][string]$BackupRoot
     )
@@ -16,7 +16,6 @@ function Link-ServerRoleGpo {
     if (-not $ComputerName -or $ComputerName.Count -eq 0) { return }
 
     $gpoName = switch ($Role) {
-        'Database' { 'Databases Firewall Policy'; break }
         'Web'      { 'Web Servers Firewall Policy'; break }
         'Mail'     { 'Mail Servers Firewall Policy'; break }
     }

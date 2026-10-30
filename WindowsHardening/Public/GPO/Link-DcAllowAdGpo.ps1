@@ -6,6 +6,22 @@ function Link-DcAllowAdGpo {
         # Firewall profiles come from the root-linked domain firewall GPO; this GPO layers
         # the DC-only allow rules on top of it.
         $gpo = Import-CcdcGpo -Name 'DC Allow AD' -BackupRoot $BackupRoot
+
+        # The bundled backup has two misspelled custom rule names. Correct the imported
+        # GPO's display names without changing the rules' ports, scope, or enabled state.
+        $policyStore = "$((Get-ADDomain -ErrorAction Stop).DNSRoot)\$($gpo.DisplayName)"
+        foreach ($ruleName in @(
+            @{ Old = 'kerberros password change tcp'; New = 'Kerberos password change TCP' }
+            @{ Old = 'kerberros password change udp'; New = 'Kerberos password change UDP' }
+        )) {
+            $typoRules = @(Get-NetFirewallRule -PolicyStore $policyStore -DisplayName $ruleName.Old -ErrorAction Stop)
+            if ($typoRules.Count -gt 0) {
+                Set-NetFirewallRule -PolicyStore $policyStore -DisplayName $ruleName.Old `
+                    -NewDisplayName $ruleName.New -ErrorAction Stop
+                Write-Status "Corrected firewall rule name '$($ruleName.Old)' to '$($ruleName.New)' in '$($gpo.DisplayName)'"
+            }
+        }
+
         # SYSVOL replication: DFSR talks RPC between DCs from dfsrs.exe in both directions.
         Set-CcdcGpoFirewallRule -GpoName $gpo.DisplayName -Rule @{
             Name = 'CCDC-DFSR-RPC-In'; DisplayName = 'CCDC DFS Replication (RPC-In)'

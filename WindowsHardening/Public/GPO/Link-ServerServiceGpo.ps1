@@ -4,17 +4,19 @@ function Link-ServerServiceGpo {
         Allows a service's firewall ports on the selected computer accounts.
     .DESCRIPTION
         Creates or updates the role's domain GPO (for example 'CCDC SSH Access'), links it
-        at the domain root, and filters it to the selected computers. Ports: WinRM TCP
-        5985/5986, SSH TCP 22, RDP TCP/UDP 3389, FTP TCP 21 plus IIS (ftpsvc) passive and
-        active data, SMB TCP 445. The services themselves are left in their current state.
+        at the domain root, and filters it to the selected computers. Ports: MSSQL TCP 1433
+        and SQL Browser UDP 1434, WinRM TCP 5985/5986, SSH TCP 22, RDP TCP/UDP 3389, FTP
+        TCP 21 plus IIS (ftpsvc) passive and active data, SMB TCP 445. The services
+        themselves are left in their current state.
     .PARAMETER RemoteAddress
-        Remote addresses allowed. Defaults to Any for all service roles, including WinRM.
+        Remote addresses allowed. Defaults to Any for all service roles, including MSSQL
+        and WinRM.
     .EXAMPLE
         Link-ServerServiceGpo -Role SSH -ComputerName LINUXGW01, FILE01
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)][ValidateSet('WinRM', 'SSH', 'RDP', 'FTP', 'SMB')][string]$Role,
+        [Parameter(Mandatory=$true)][ValidateSet('Database', 'WinRM', 'SSH', 'RDP', 'FTP', 'SMB')][string]$Role,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
         [string[]]$RemoteAddress
     )

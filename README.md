@@ -194,10 +194,13 @@ the indexer address. `-NoPrompt` skips role selection, so combine it with `-Skip
 or `-SplunkIP`.
 
 The service roles create or update their own GPO with a direct computer-account filter.
-The services themselves are left as they are:
+The services themselves are left as they are. Database now uses standard MSSQL ports
+instead of importing the bundled database GPO; named instances using dynamic or custom
+ports need a separate `Add-DomainFirewallPortRule` exception:
 
 | Role | GPO | Inbound allow | Default remote scope |
 |---|---|---|---|
+| Database | `CCDC MSSQL Access` | TCP 1433; UDP 1434 (SQL Browser) | Any |
 | WinRM | `CCDC Preserve WinRM` | TCP 5985, 5986 (System) | Any (`-WinRMRemoteAddress`) |
 | SSH | `CCDC SSH Access` | TCP 22 | Any |
 | RDP | `CCDC RDP Access` | TCP and UDP 3389 | Any |
@@ -205,7 +208,7 @@ The services themselves are left as they are:
 | SMB | `CCDC SMB Access` | TCP 445 (System) | Any |
 
 Override a scope with `-RoleRemoteAddress`, for example `@{ RDP = 'LocalSubnet' }`, or
-link a role on its own with `Link-ServerServiceGpo -Role SSH -ComputerName FILE01`. The
+link a role on its own with `Link-ServerServiceGpo -Role Database -ComputerName DB01`. The
 FTP data rules match only IIS FTP. For another FTP server, add its passive range with
 `Add-DomainFirewallPortRule -Port 21, '50000-50100'`. Windows' stateful FTP setting is not a substitute: it does
 not open passive ports, and the GPO version of the setting was not honored in testing.

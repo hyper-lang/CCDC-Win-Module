@@ -102,7 +102,7 @@ function Set-OperationStatus {
 $script:TrackedOperations = @(
     "Initialize Context",
     "Link DC Allow AD GPO", "Link Domain Firewall GPO", "Link Domain GPO Update Interval",
-    "Link Domain Good-GPO", "Link Splunk Server GPO", "Link Database Server GPO",
+    "Link Domain Good-GPO", "Link Splunk Server GPO", "Link Database Access GPO",
     "Link Web Server GPO", "Link Mail Server GPO", "Link WinRM Management GPO",
     "Link SSH Access GPO", "Link RDP Access GPO", "Link FTP Access GPO", "Link SMB Access GPO",
     "Refresh Group Policy",
