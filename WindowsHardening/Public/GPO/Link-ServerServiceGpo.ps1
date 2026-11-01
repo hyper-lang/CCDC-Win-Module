@@ -23,7 +23,7 @@ function Link-ServerServiceGpo {
 
     if (-not $ComputerName -or $ComputerName.Count -eq 0) { return }
     $operationName = if ($Role -eq 'WinRM') { 'Link WinRM Management GPO' } else { "Link $Role Access GPO" }
-    Invoke-HardeningOperation -OperationName $operationName -ScriptBlock {
+    Invoke-HardeningOperation -OperationName $operationName -TargetComputerName $ComputerName -ScriptBlock {
         Add-CcdcServiceRoleGpo -Role $Role -ComputerName $ComputerName -RemoteAddress $RemoteAddress
         if ($Role -eq 'FTP') {
             Write-Status -Level Warning "FTP data ports are allowed only for IIS FTP (ftpsvc). For FileZilla or another FTP server, add its passive range: Add-DomainFirewallPortRule -Name <name> -ComputerName <server> -Port '<low>-<high>'" `

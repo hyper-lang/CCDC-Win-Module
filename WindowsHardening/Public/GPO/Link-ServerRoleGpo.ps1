@@ -20,7 +20,7 @@ function Link-ServerRoleGpo {
         'Mail'     { 'Mail Servers Firewall Policy'; break }
     }
 
-    Invoke-HardeningOperation -OperationName "Link $Role Server GPO" -ScriptBlock {
+    Invoke-HardeningOperation -OperationName "Link $Role Server GPO" -TargetComputerName $ComputerName -ScriptBlock {
         Invoke-CcdcGpoLinkOperation -Name $gpoName -BackupRoot $BackupRoot `
             -Target (Get-CcdcDomainRootDn) -SecurityFilter $ComputerName
     }

@@ -13,7 +13,9 @@ function Invoke-HardeningOperation {
 
         [string[]]$OSCompatibility = @(),
 
-        [string]$ProgressMessage = ""
+        [string]$ProgressMessage = "",
+
+        [string[]]$TargetComputerName = @()
     )
 
     # Step label (e.g. "Users 2/6") set by the calling orchestrator via
@@ -46,7 +48,9 @@ function Invoke-HardeningOperation {
         if ($ProgressMessage) {
             Write-Status $ProgressMessage
         }
-        if ($script:HardeningContext.OS) {
+        if ($TargetComputerName.Count -gt 0) {
+            Write-Status "Applying configuration for $($TargetComputerName -join ', ')..." -NoLog
+        } elseif ($script:HardeningContext.OS) {
             Write-Status "Applying configuration for $($script:HardeningContext.OS.OSVersion)..." -NoLog
         }
 

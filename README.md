@@ -185,13 +185,16 @@ targeted domain GPOs. Finally it runs `gpupdate /force`, configures Splunk if en
 and creates CCDC users.
 WinRM is left running by this sequence.
 
-By default, the run prompts for which Windows Server computers need each role, then for the Splunk indexer address. Splunk outbound
+By default, the run prompts for which enabled Windows Server, Windows 10, and Windows 11 computers need each role, then for the Splunk indexer address. Splunk outbound
 TCP 9997 is linked for all domain computers and domain controllers.
 Domain controllers are included in those lists. Select multiple entries by entering
 their numbers separated by commas (for example `1,3`), or pass arrays through
 `-RoleServers`, such as `@{ Database = @('DB01','DB02') }`. Use `-SplunkIP` to supply
 the indexer address. `-NoPrompt` skips role selection, so combine it with `-SkipSplunk`
 or `-SplunkIP`.
+
+For each role GPO operation, progress output identifies the selected target computer
+names rather than the domain controller running `Invoke-DomainHardening`.
 
 The service roles create or update their own GPO with a direct computer-account filter.
 The services themselves are left as they are. Database now uses standard MSSQL ports

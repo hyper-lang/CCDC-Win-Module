@@ -158,7 +158,7 @@ function Invoke-DomainHardening {
             $servers = @($RoleServers[$roleKey] | Where-Object { $_ })
         } elseif (-not $NoPrompt) {
             $computers = @(Get-ADComputer -Filter * -Properties OperatingSystem, Enabled, PrimaryGroupID -ErrorAction Stop |
-                Where-Object { $_.Enabled -and $_.OperatingSystem -match 'Server' } |
+                Where-Object { $_.Enabled -and $_.OperatingSystem -match '^Windows (Server|10|11)\b' } |
                 Sort-Object Name)
             if ($computers.Count -gt 0) {
                 $optionNumber = 0

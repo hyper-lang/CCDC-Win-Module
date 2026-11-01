@@ -52,14 +52,15 @@ function Set-FirewallAllowRule {
     $existing = @(Get-NetFirewallRule -DisplayName $displayName -ErrorAction Ignore)
 
     if ($existing.Count -gt 0) {
-        $existing[0] | Set-NetFirewallRule -Direction Inbound -Action Allow -Protocol $Protocol -LocalPort $Port -Enabled True
+        $existing[0] | Set-NetFirewallRule -Direction Inbound -Action Allow -Enabled True -ErrorAction Stop
+        $existing[0] | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol $Protocol -LocalPort $Port -ErrorAction Stop
         if ($existing.Count -gt 1) {
-            $existing[1..($existing.Count - 1)] | Remove-NetFirewallRule
+            $existing[1..($existing.Count - 1)] | Remove-NetFirewallRule -ErrorAction Stop
             Write-Status "Removed $($existing.Count - 1) duplicate '$displayName' rule(s)" -LogOnly
         }
         $status = 'Updated'
     } else {
-        New-NetFirewallRule -DisplayName $displayName -Direction Inbound -LocalPort $Port -Action Allow -Protocol $Protocol -Enabled True | Out-Null
+        New-NetFirewallRule -DisplayName $displayName -Direction Inbound -LocalPort $Port -Action Allow -Protocol $Protocol -Enabled True -ErrorAction Stop | Out-Null
         $status = 'Created'
     }
 

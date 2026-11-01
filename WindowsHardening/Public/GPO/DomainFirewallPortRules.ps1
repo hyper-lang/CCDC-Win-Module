@@ -28,7 +28,7 @@ function Add-DomainFirewallPortRule {
     $gpoName = "CCDC Port Rule - $Name"
     $ruleName = 'CCDC-Port-' + ($Name -replace '[^A-Za-z0-9_.-]', '-')
     if ($PSCmdlet.ShouldProcess("$($ComputerName -join ', ') / $gpoName", "Add $Direction $Protocol port(s) $($Port -join ',')")) {
-      Invoke-HardeningOperation -OperationName "Add Domain Firewall Port Rule '$Name'" -ScriptBlock {
+      Invoke-HardeningOperation -OperationName "Add Domain Firewall Port Rule '$Name'" -TargetComputerName $ComputerName -ScriptBlock {
         foreach ($moduleName in @('ActiveDirectory', 'GroupPolicy', 'NetSecurity')) {
             if (-not (Get-Module -Name $moduleName)) { Import-Module $moduleName -ErrorAction Stop }
         }
