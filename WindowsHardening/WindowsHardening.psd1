@@ -96,8 +96,8 @@
         'Get-LSARegistryValues'
         'Restore-LSAValues'
         'Restore-RegistrySecurityValues'
-        'install-nxlog'
-        'install-fibratus'
+        'Install-NXLog'
+        'Install-Fibratus'
     )
 
     AliasesToExport = @()
