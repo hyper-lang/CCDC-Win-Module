@@ -125,6 +125,9 @@ function Invoke-DomainHardening {
     $script:NextStepLabel = 'Domain 3/13'
     Remove-AdminUsers
 
+    Write-Banner 'Pre-linking VSS snapshot' -Style Inline -Log
+    $null = New-HardeningVssSnapshot
+
     Write-Banner 'Link domain policies' -Style Inline -Log
     $script:NextStepLabel = 'Domain 4/13'
     Link-DcAllowAdGpo -BackupRoot $backupRoot

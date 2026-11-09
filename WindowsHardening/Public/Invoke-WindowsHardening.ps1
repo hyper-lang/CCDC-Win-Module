@@ -230,6 +230,9 @@
         Set-ZuluPassword -SaltPhrase $SaltPhrase
     }
 
+    Write-Banner "Pre-hardening VSS snapshot" -Style Inline -Log
+    $null = New-HardeningVssSnapshot
+
     # Decide before configuring the firewall so the WinRM allow rules match the service choice.
     if (-not $SkipWinRM -and -not $DisableWinRM) {
         if ($NoPrompt) {

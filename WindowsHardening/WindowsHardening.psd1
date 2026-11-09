@@ -14,6 +14,9 @@
         'Invoke-DomainHardening'
         'Invoke-HardeningMenu'
 
+        # -- Public/Backups/ --------------------------------------------------
+        'New-HardeningVssSnapshot'
+
         # -- Public/GPO/ -----------------------------------------------------
         'Backup-DomainGpos'
         'Link-DcAllowAdGpo'
