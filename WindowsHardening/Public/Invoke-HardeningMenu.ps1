@@ -55,9 +55,10 @@
             return
         }
 
-        $folderOptions = @($folders | ForEach-Object {
-            @{ Key = $_.Name; Label = $_.Name; Value = $_.Path }
-        })
+        $folderOptions = @()
+        for ($i = 0; $i -lt $folders.Count; $i++) {
+            $folderOptions += @{ Key = "$($i + 1)"; Label = $folders[$i].Name; Value = $folders[$i].Path }
+        }
         $folderPath = Read-Choice -Title 'Browse folders' -Prompt 'Folder' -Options $folderOptions -AllowQuit -QuitLabel 'Back'
         if (-not $folderPath) { return }
 
@@ -66,10 +67,11 @@
             Write-Status -Level Warning 'No PowerShell scripts found in this folder.' -NoLog
             return
         }
-        $scriptOptions = @($files | ForEach-Object {
-            $functionName = $_.BaseName
-            @{ Key = $functionName; Label = $functionName; Value = $functionName }
-        })
+        $scriptOptions = @()
+        for ($i = 0; $i -lt $files.Count; $i++) {
+            $functionName = $files[$i].BaseName
+            $scriptOptions += @{ Key = "$($i + 1)"; Label = $functionName; Value = $functionName }
+        }
         $functionName = Read-Choice -Title (Split-Path $folderPath -Leaf) -Prompt 'Function' -Options $scriptOptions -AllowQuit -QuitLabel 'Back'
         if (-not $functionName) { return }
 
