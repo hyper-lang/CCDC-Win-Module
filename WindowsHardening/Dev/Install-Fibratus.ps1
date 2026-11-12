@@ -78,15 +78,50 @@ function Install-Fibratus {
             Write-Status -Level Warning "Using Fibratus $selectedVersion on $osVersion to avoid a process-integrity panic in v3.1.1. Pass -FibratusVersion to override."
         }
         if ($selectedVersion -and $selectedVersion -notmatch '^v') { $selectedVersion = "v$selectedVersion" }
+        $installerStdout = Join-Path $env:TEMP 'install-fibratus.stdout.log'
+        $installerStderr = Join-Path $env:TEMP 'install-fibratus.stderr.log'
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri 'https://install.fibratus.io' -OutFile $bootstrapPath -UseBasicParsing -ErrorAction Stop
             Write-Status 'Downloaded the official Fibratus installer'
-            if ($selectedVersion) { & $bootstrapPath -Version $selectedVersion -Force }
-            else { & $bootstrapPath -Force }
-            if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Fibratus installer exited with code $LASTEXITCODE" }
+            # The upstream bootstrap downloads the MSI in a background job when
+            # attached to an interactive console. Start-Job launches a separate
+            # PowerShell process, so the TLS 1.2 setting above is not inherited and
+            # the asset download can fail on older Windows/.NET defaults. Redirect
+            # its output so the bootstrap takes its synchronous download path.
+            $powershellExe = Join-Path $PSHOME 'powershell.exe'
+            Remove-Item -LiteralPath $installerStdout, $installerStderr -Force -ErrorAction SilentlyContinue
+
+            $installerArguments = @(
+                '-NoProfile',
+                '-NonInteractive',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', "`"$bootstrapPath`""
+            )
+            if ($selectedVersion) { $installerArguments += @('-Version', $selectedVersion) }
+            $installerArguments += '-Force'
+
+            $installerProcess = Start-Process -FilePath $powershellExe -ArgumentList $installerArguments `
+                -RedirectStandardOutput $installerStdout -RedirectStandardError $installerStderr `
+                -WindowStyle Hidden -Wait -PassThru
+
+            foreach ($line in @(Get-Content -LiteralPath $installerStdout -ErrorAction SilentlyContinue)) {
+                Write-Host $line
+            }
+            foreach ($line in @(Get-Content -LiteralPath $installerStderr -ErrorAction SilentlyContinue)) {
+                Write-Host $line -ForegroundColor Red
+            }
+            if ($installerProcess.ExitCode -ne 0) {
+                $details = @(
+                    Get-Content -LiteralPath $installerStdout -Tail 8 -ErrorAction SilentlyContinue
+                    Get-Content -LiteralPath $installerStderr -Tail 8 -ErrorAction SilentlyContinue
+                ) -join ' '
+                throw "Fibratus installer exited with code $($installerProcess.ExitCode). $details"
+            }
         } catch {
             throw "Fibratus installation failed: $($_.Exception.Message)"
+        } finally {
+            Remove-Item -LiteralPath $installerStdout, $installerStderr -Force -ErrorAction SilentlyContinue
         }
 
         $fibratusExe = Join-Path $env:ProgramFiles 'Fibratus\Bin\fibratus.exe'
