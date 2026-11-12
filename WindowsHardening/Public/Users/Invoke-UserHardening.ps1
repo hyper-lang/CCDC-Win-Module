@@ -54,64 +54,66 @@
         [switch]$SkipMimikatz,
 
         [string]$SaltPhrase
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
 
-    Write-Banner "User & Credential Hardening"
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+    Initialize-System -State $State
+
+    Write-Banner "User & Credential Hardening" -State $State
 
     # Step 1: Change the built-in Administrator password.
     if (-not $SkipPasswordChange) {
-        $script:NextStepLabel = 'Users 1/6'
-        Set-AdministratorPassword -SaltPhrase $SaltPhrase
+        Set-AdministratorPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Users 1/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 1/6' "SKIPPED - Administrator password change (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: Administrator password change skipped"
+        Write-Status -Level Skip -Tag 'Users 1/6' "SKIPPED - Administrator password change (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: Administrator password change skipped" -State $State
     }
 
     # Step 2: Remove extra admin accounts.
     if (-not $SkipAdminRemoval) {
-        $script:NextStepLabel = 'Users 2/6'
-        Remove-AdminUsers
+        Remove-AdminUsers -State $State -StepLabel 'Users 2/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 2/6' "SKIPPED - admin removal (-SkipAdminRemoval)" -LogMessage "Invoke-UserHardening: admin removal skipped"
+        Write-Status -Level Skip -Tag 'Users 2/6' "SKIPPED - admin removal (-SkipAdminRemoval)" -LogMessage "Invoke-UserHardening: admin removal skipped" -State $State
     }
 
     # Step 3: Rotate eligible existing-user passwords.
     if (-not $SkipPasswordChange) {
-        $script:NextStepLabel = 'Users 3/6'
-        Set-ZuluPassword -SaltPhrase $SaltPhrase
+        Set-ZuluPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Users 3/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 3/6' "SKIPPED - password rotation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: password rotation skipped"
+        Write-Status -Level Skip -Tag 'Users 3/6' "SKIPPED - password rotation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: password rotation skipped" -State $State
     }
 
     # Step 4: Reset RDP group.
     if (-not $SkipRDP) {
-        $script:NextStepLabel = 'Users 4/6'
-        Remove-RDPUsers
+        Remove-RDPUsers -State $State -StepLabel 'Users 4/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 4/6' "SKIPPED - RDP group reset (-SkipRDP)" -LogMessage "Invoke-UserHardening: RDP group reset skipped"
+        Write-Status -Level Skip -Tag 'Users 4/6' "SKIPPED - RDP group reset (-SkipRDP)" -LogMessage "Invoke-UserHardening: RDP group reset skipped" -State $State
     }
 
     # Step 5: Credential hardening (WDigest).
     if (-not $SkipMimikatz) {
-        $script:NextStepLabel = 'Users 5/6'
-        Protect-Mimikatz
+        Protect-Mimikatz -State $State -StepLabel 'Users 5/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 5/6' "SKIPPED - credential hardening (-SkipMimikatz)" -LogMessage "Invoke-UserHardening: Protect-Mimikatz skipped"
+        Write-Status -Level Skip -Tag 'Users 5/6' "SKIPPED - credential hardening (-SkipMimikatz)" -LogMessage "Invoke-UserHardening: Protect-Mimikatz skipped" -State $State
     }
 
     # Step 6: Create competition accounts after the more urgent credential cleanup.
     if (-not $SkipPasswordChange) {
-        $script:NextStepLabel = 'Users 6/6'
-        Create-CCDCUsers -SaltPhrase $SaltPhrase
+        Create-CCDCUsers -SaltPhrase $SaltPhrase -State $State -StepLabel 'Users 6/6'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Users 6/6' "SKIPPED - CCDC account creation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: CCDC account creation skipped"
+        Write-Status -Level Skip -Tag 'Users 6/6' "SKIPPED - CCDC account creation (-SkipPasswordChange)" -LogMessage "Invoke-UserHardening: CCDC account creation skipped" -State $State
     }
 
     Write-Host ""
-    Write-Status -Tag Users "Done." -LogMessage "Invoke-UserHardening completed"
+    Write-Status -Tag Users "Done." -LogMessage "Invoke-UserHardening completed" -State $State
+    Flush-HardeningLog -State $State
 }

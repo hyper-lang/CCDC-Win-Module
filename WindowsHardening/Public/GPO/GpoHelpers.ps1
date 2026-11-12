@@ -158,13 +158,14 @@ function Invoke-CcdcGpoLinkOperation {
         [Parameter(Mandatory=$true)][string]$Target,
         [string[]]$SecurityFilter,
         [string[]]$SecurityFilterGroup,
-        [switch]$Enforced
+        [switch]$Enforced,
+        [object]$State = $null
     )
 
     $gpo = Import-CcdcGpo -Name $Name -BackupRoot $BackupRoot
     Add-CcdcGpoLink -Name $gpo.DisplayName -Target $Target -SecurityFilter $SecurityFilter `
         -SecurityFilterGroup $SecurityFilterGroup -Enforced:$Enforced
-    Write-Status -Level Success "Imported '$Name' and linked it to $Target" -LogMessage "Imported GPO '$Name' and linked to '$Target'"
+    Write-Status -Level Success "Imported '$Name' and linked it to $Target" -LogMessage "Imported GPO '$Name' and linked to '$Target'" -State $State
 }
 
 function Get-CcdcDomainRootDn {
@@ -222,6 +223,7 @@ function Set-CcdcGpoFirewallRule {
 $script:CcdcServiceRoles = @{
     Database = @{
         GpoName = 'CCDC MSSQL Access'; RemoteAddress = @('Any')
+        Services = @('MSSQLSERVER', 'SQLBrowser')
         Rules = @(
             @{ Name = 'CCDC-Allow-MSSQL-TCP'; DisplayName = 'CCDC MSSQL (TCP-In)'; Protocol = 'TCP'; LocalPort = '1433' }
             @{ Name = 'CCDC-Allow-MSSQL-Browser-UDP'; DisplayName = 'CCDC MSSQL Browser (UDP-In)'; Protocol = 'UDP'; LocalPort = '1434' }
@@ -229,6 +231,12 @@ $script:CcdcServiceRoles = @{
     }
     WinRM = @{
         GpoName = 'CCDC Preserve WinRM'; RemoteAddress = @('Any')
+        Services = @('WinRM')
+        Registry = @(
+            @{ Key = 'HKLM\Software\Policies\Microsoft\Windows\WinRM\Service'; Name = 'AllowAutoConfig'; Type = 'DWord'; Value = 1 }
+            @{ Key = 'HKLM\Software\Policies\Microsoft\Windows\WinRM\Service'; Name = 'IPv4Filter'; Type = 'String'; Value = '*' }
+            @{ Key = 'HKLM\Software\Policies\Microsoft\Windows\WinRM\Service'; Name = 'IPv6Filter'; Type = 'String'; Value = '*' }
+        )
         Rules = @(
             # WinRM listens through HTTP.sys (System), so a -Service WinRM filter never matches.
             @{ Name = 'CCDC-Allow-WinRM'; DisplayName = 'CCDC Preserve WinRM'; Protocol = 'TCP'; LocalPort = @('5985', '5986'); Program = 'System' }
@@ -236,12 +244,18 @@ $script:CcdcServiceRoles = @{
     }
     SSH = @{
         GpoName = 'CCDC SSH Access'; RemoteAddress = @('Any')
+        Services = @('sshd')
         Rules = @(
             @{ Name = 'CCDC-Allow-SSH'; DisplayName = 'CCDC SSH (TCP-In)'; Protocol = 'TCP'; LocalPort = '22' }
         )
     }
     RDP = @{
         GpoName = 'CCDC RDP Access'; RemoteAddress = @('Any')
+        Services = @('TermService')
+        Registry = @(
+            @{ Key = 'HKLM\Software\Policies\Microsoft\Windows NT\Terminal Services'; Name = 'fDenyTSConnections'; Type = 'DWord'; Value = 0 }
+            @{ Key = 'HKLM\Software\Policies\Microsoft\Windows NT\Terminal Services'; Name = 'UserAuthentication'; Type = 'DWord'; Value = 1 }
+        )
         Rules = @(
             @{ Name = 'CCDC-Allow-RDP-TCP'; DisplayName = 'CCDC RDP (TCP-In)'; Protocol = 'TCP'; LocalPort = '3389' }
             @{ Name = 'CCDC-Allow-RDP-UDP'; DisplayName = 'CCDC RDP (UDP-In)'; Protocol = 'UDP'; LocalPort = '3389' }
@@ -249,6 +263,7 @@ $script:CcdcServiceRoles = @{
     }
     FTP = @{
         GpoName = 'CCDC FTP Access'; RemoteAddress = @('Any')
+        Services = @('FTPSVC')
         Rules = @(
             @{ Name = 'CCDC-Allow-FTP'; DisplayName = 'CCDC FTP (TCP-In)'; Protocol = 'TCP'; LocalPort = '21' }
             # Stateful FTP does not open passive data ports, and its GPO setting is not honored.
@@ -259,10 +274,75 @@ $script:CcdcServiceRoles = @{
     }
     SMB = @{
         GpoName = 'CCDC SMB Access'; RemoteAddress = @('Any')
+        Services = @('LanmanServer')
         Rules = @(
             @{ Name = 'CCDC-Allow-SMB'; DisplayName = 'CCDC SMB (TCP-In)'; Protocol = 'TCP'; LocalPort = '445'; Program = 'System' }
         )
     }
+    Ping = @{
+        GpoName = 'CCDC Ping Access'; RemoteAddress = @('Any')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-Ping-IPv4'; DisplayName = 'CCDC Ping (ICMPv4 Echo-In)'; Protocol = 'ICMPv4'; IcmpType = 8 }
+            @{ Name = 'CCDC-Allow-Ping-IPv6'; DisplayName = 'CCDC Ping (ICMPv6 Echo-In)'; Protocol = 'ICMPv6'; IcmpType = 128 }
+        )
+    }
+    SNMP = @{
+        GpoName = 'CCDC SNMP Access'; RemoteAddress = @('Any'); Services = @('SNMP')
+        Rules = @(
+            @{ Name = 'CCDC-Allow-SNMP-Query'; DisplayName = 'CCDC SNMP Query (UDP-In)'; Protocol = 'UDP'; LocalPort = '161' }
+            @{ Name = 'CCDC-Allow-SNMP-Traps'; DisplayName = 'CCDC SNMP Traps (UDP-Out)'; Protocol = 'UDP'; LocalPort = '162'; Direction = 'Outbound' }
+        )
+    }
+}
+
+function Add-CcdcGpoLocalGroupMember {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$GpoName,
+        [Parameter(Mandatory=$true)][string]$LocalGroupSid
+    )
+
+    $domainUsersSid = (Get-ADGroup -Identity 'Domain Users' -ErrorAction Stop).SID.Value
+    $gpo = Get-GPO -Name $GpoName -ErrorAction Stop
+    $domain = Get-ADDomain -ErrorAction Stop
+    $gpoSysvolPath = "\\$($domain.PDCEmulator)\SYSVOL\$($domain.DNSRoot)\Policies\{$($gpo.Id)}"
+    $policyRoot = Join-Path $gpoSysvolPath 'Machine\Microsoft\Windows NT\SecEdit'
+    $null = New-Item -Path $policyRoot -ItemType Directory -Force
+    $templatePath = Join-Path $policyRoot 'GptTmpl.inf'
+    $membershipLine = "*${domainUsersSid}__Memberof = *$LocalGroupSid"
+    $lines = if (Test-Path -LiteralPath $templatePath) { @(Get-Content -LiteralPath $templatePath) } else { @('[Unicode]', 'Unicode=yes', '[Version]', 'signature="$CHICAGO"', 'Revision=1') }
+    $groupIndex = [Array]::IndexOf($lines, '[Group Membership]')
+    if ($groupIndex -lt 0) {
+        $lines += '[Group Membership]'
+        $lines += $membershipLine
+    } elseif ($lines -notcontains $membershipLine) {
+        $nextSection = $lines.Count
+        for ($index = $groupIndex + 1; $index -lt $lines.Count; $index++) {
+            if ($lines[$index] -match '^\[[^\]]+\]$') { $nextSection = $index; break }
+        }
+        $beforeSection = if ($nextSection -gt 0) { @($lines[0..($nextSection - 1)]) } else { @() }
+        $afterSection = if ($nextSection -lt $lines.Count) { @($lines[$nextSection..($lines.Count - 1)]) } else { @() }
+        $lines = @($beforeSection + $membershipLine + $afterSection)
+    }
+    Set-Content -LiteralPath $templatePath -Value $lines -Encoding Unicode
+
+    $securityCse = '{827D319E-6EAC-11D2-A4EA-00C04F79F83A}'
+    $securityTool = '{803E14A0-B4FB-11D0-A0D0-00A0C90F574B}'
+    $adGpo = Get-ADObject -Identity "CN={$($gpo.Id)},CN=Policies,CN=System,$($domain.DistinguishedName)" -Properties gPCMachineExtensionNames, versionNumber -ErrorAction Stop
+    $pair = "[$securityCse$securityTool]"
+    $extensions = [string]$adGpo.gPCMachineExtensionNames
+    if (-not $extensions.Contains($pair)) {
+        Set-ADObject -Identity $adGpo.DistinguishedName -Replace @{ gPCMachineExtensionNames = ($extensions + $pair) } -ErrorAction Stop
+    }
+
+    # Bump the machine-side GPO version so clients process the updated security template.
+    $gptIni = Join-Path $gpoSysvolPath 'gpt.ini'
+    if (-not (Test-Path -LiteralPath $gptIni)) { throw "GPO GPT.INI is missing: $gptIni" }
+    $versionText = Get-Content -LiteralPath $gptIni -Raw
+    $currentVersion = [int]([regex]::Match($versionText, '(?m)^Version=(\d+)').Groups[1].Value)
+    $nextVersion = (($currentVersion -band 0xFFFF0000) -bor ((($currentVersion -band 0xFFFF) + 1) -band 0xFFFF))
+    Set-Content -LiteralPath $gptIni -Value ([regex]::Replace($versionText, '(?m)^Version=\d+', "Version=$nextVersion")) -Encoding ASCII
+    Set-ADObject -Identity $adGpo.DistinguishedName -Replace @{ versionNumber = $nextVersion } -ErrorAction Stop
 }
 
 function Add-CcdcServiceRoleGpo {
@@ -270,7 +350,8 @@ function Add-CcdcServiceRoleGpo {
     param(
         [Parameter(Mandatory=$true)][string]$Role,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
-        [string[]]$RemoteAddress
+        [string[]]$RemoteAddress,
+        [object]$State = $null
     )
 
     $definition = $script:CcdcServiceRoles[$Role]
@@ -288,7 +369,23 @@ function Add-CcdcServiceRoleGpo {
         Set-CcdcGpoFirewallRule -GpoName $gpoName -Rule $ruleParams
     }
 
+    foreach ($service in @($definition.Services)) {
+        Set-GPRegistryValue -Name $gpoName -Key "HKLM\System\CurrentControlSet\Services\$service" -ValueName Start -Type DWord -Value 2 -ErrorAction Stop | Out-Null
+    }
+    foreach ($setting in @($definition.Registry)) {
+        if ($setting) {
+            Set-GPRegistryValue -Name $gpoName -Key $setting.Key -ValueName $setting.Name -Type $setting.Type -Value $setting.Value -ErrorAction Stop | Out-Null
+        }
+    }
+    $localGroupSid = switch ($Role) {
+        'RDP' { 'S-1-5-32-555' }
+        'SSH' { 'S-1-5-32-585' }
+        'WinRM' { 'S-1-5-32-580' }
+        default { $null }
+    }
+    if ($localGroupSid) { Add-CcdcGpoLocalGroupMember -GpoName $gpoName -LocalGroupSid $localGroupSid }
+
     Add-CcdcGpoLink -Name $gpo.DisplayName -Target (Get-CcdcDomainRootDn) -SecurityFilter $ComputerName
     Write-Status -Level Success "Created/updated '$gpoName' for $($ComputerName -join ', ')" `
-        -LogMessage "Created/updated '$gpoName' ($($RemoteAddress -join ', ')) for computer account(s): $($ComputerName -join ', ')"
+        -LogMessage "Created/updated '$gpoName' ($($RemoteAddress -join ', ')) for computer account(s): $($ComputerName -join ', ')" -State $State
 }

@@ -4,10 +4,13 @@
 
 function Get-OperatingSystemInfo {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null)
 
-    if ($script:HardeningContext.OS) {
-        return $script:HardeningContext.OS
+    if ($State -and $State.Context.OS) {
+        return $State.Context.OS
+    }
+    if (-not $State -and $script:ImportOsInfo) {
+        return $script:ImportOsInfo
     }
 
     try {
@@ -129,14 +132,19 @@ function Get-OperatingSystemInfo {
                 elseif ($isDomainJoined) { "domain member ($($result.Domain))" }
                 else { 'not domain-joined' }
         Write-Host ""
-        Write-Status "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition) - $role" -LogMessage "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)"
+        Write-Status "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition) - $role" -LogMessage "OS Detection: $($result.OSVersion) (Build $($result.BuildNumber)) - $($result.Edition)" -State $State
         if ($isDomainController) {
-            Write-Status "Domain Controller detected - AD operations enabled" -LogOnly
+            Write-Status "Domain Controller detected - AD operations enabled" -LogOnly -State $State
         } else {
-            Write-Status "Non-domain machine detected - local operations only" -LogOnly
+            Write-Status "Non-domain machine detected - local operations only" -LogOnly -State $State
         }
 
-        $script:HardeningContext.OS = $result
+        if ($State) {
+            $State.Context.OS = $result
+        } else {
+            # Preserve the import-time machine-information cache without storing run state.
+            $script:ImportOsInfo = $result
+        }
         return $result
 
     } catch {

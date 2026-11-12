@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 <#
 .SYNOPSIS
@@ -21,7 +21,7 @@
     duplicated, and enabled Block rules that would override an Allow rule are reported.
     To open a port later without resetting the firewall, use Add-FirewallPort.
 
-    Domain-vs-Local branching is driven by $script:HardeningContext.OS.IsDomainController.
+    Domain-vs-Local branching is driven by $State.Context.OS.IsDomainController.
 
 .PARAMETER FirewallPorts
     Ports to allow. When given, no prompts are shown and no ports are added automatically.
@@ -55,12 +55,18 @@ function Set-FirewallConfiguration {
         [switch]$Prompt,
 
         [switch]$PreserveManagementPort
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Configure Firewall" -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Configure Firewall" -ScriptBlock {
         try {
             $portsToAllow = @()
-            $isDC = $script:HardeningContext.OS.IsDomainController
+            $isDC = $State.Context.OS.IsDomainController
 
             if ($isDC) {
                 $commonADorDC = @(53, 139, 88, 67, 68, 135, 389, 445, 636, 3268, 3269, 464)
@@ -69,15 +75,15 @@ function Set-FirewallConfiguration {
             # Explicit ports: use exactly these
             if ($null -ne $FirewallPorts -and $FirewallPorts.Count -gt 0) {
                 $portsToAllow = $FirewallPorts
-                Write-Status "Using firewall ports from parameter: $($portsToAllow -join ', ')"
+                Write-Status "Using firewall ports from parameter: $($portsToAllow -join ', ')" -State $State
             }
             # Non-interactive without ports: AD ports on a DC, Deny All only on a local machine
             elseif ($NonInteractive -or $Prompt) {
                 if ($isDC) {
                     $portsToAllow = $commonADorDC
-                    Write-Status "Using common AD ports: $($portsToAllow -join ', ')"
+                    Write-Status "Using common AD ports: $($portsToAllow -join ', ')" -State $State
                 } else {
-                    Write-Status "No ports specified - applying Deny All Inbound rule only"
+                    Write-Status "No ports specified - applying Deny All Inbound rule only" -State $State
                 }
             }
             # Interactive: one multi-select prompt over the suggested ports; unlisted ports
@@ -92,18 +98,18 @@ function Set-FirewallConfiguration {
 
                 $ready = $false
                 while ($true) {
-                    $desigPorts = Read-Choice -Title "Firewall Ports" -Prompt "Ports to allow" -Options $portOptions `
+                    $desigPorts = Read-Choice -Title "Firewall Ports" -Prompt "Ports to allow" -Options $portOptions -State $State `
                         -Multiple -AllowCustom -AllowEmpty -AllowQuit -Default $defaultKeys `
                         -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
                     if ($null -eq $desigPorts) { break }
 
-                    Write-Banner "Designated Ports" -Style Inline
+                    Write-Banner "Designated Ports" -Style Inline -State $State
                     if ($desigPorts.Count -gt 0) {
                         Write-Host (($desigPorts | Sort-Object) -join ', ')
                     } else {
                         Write-Host "(none - Deny All Inbound only)"
                     }
-                    if ((Read-YesNo -Message "Are these ports correct (y/n)? ") -eq 'y') {
+                    if ((Read-YesNo -Message "Are these ports correct (y/n)? " -State $State) -eq 'y') {
                         $portsToAllow = $desigPorts
                         $ready = $true
                         break
@@ -121,10 +127,10 @@ function Set-FirewallConfiguration {
             if ($Prompt) {
                 $alreadyAllowed = @(@($portsToAllow) + @($AdditionalPorts) | Where-Object { "$_" -ne '' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
                 if ($alreadyAllowed.Count -gt 0) {
-                    Write-Status "Already allowed: $($alreadyAllowed -join ', ')"
+                    Write-Status "Already allowed: $($alreadyAllowed -join ', ')" -State $State
                 }
                 try {
-                    $promptedPorts = Read-Choice -Title "Additional Ports" -Prompt "Any additional ports to open" -Options @() `
+                    $promptedPorts = Read-Choice -Title "Additional Ports" -Prompt "Any additional ports to open" -Options @() -State $State `
                         -Multiple -AllowCustom -AllowEmpty `
                         -Hint "enter port numbers separated by commas" `
                         -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
@@ -132,7 +138,7 @@ function Set-FirewallConfiguration {
                     # No console (e.g. over WinRM): still apply the firewall, just without extras.
                     $promptedPorts = @()
                     Write-Status -Level Warning "Cannot ask for extra ports in this session; using the ports above only (pass -NoPrompt to skip the question)" `
-                        -LogMessage "Extra-port prompt unavailable: $($_.Exception.Message)"
+                        -LogMessage "Extra-port prompt unavailable: $($_.Exception.Message)" -State $State
                 }
             }
 
@@ -140,18 +146,18 @@ function Set-FirewallConfiguration {
             $extraPorts = @(@($AdditionalPorts) + @($promptedPorts) | Where-Object { $null -ne $_ })
             $portsToAllow = @((ConvertTo-PortList -Ports (@($portsToAllow) + $extraPorts | ForEach-Object { "$_" })) | Sort-Object -Unique)
             if ($extraPorts.Count -gt 0) {
-                Write-Status "Additional ports: $($extraPorts -join ', ')" -LogMessage "Additional firewall ports: $($extraPorts -join ', ')"
+                Write-Status "Additional ports: $($extraPorts -join ', ')" -LogMessage "Additional firewall ports: $($extraPorts -join ', ')" -State $State
             }
 
             # Back up the current policy. One file per run, so re-running never overwrites the
             # original pre-hardening backup. netsh reports failure only through its exit code.
-            $FirewallBackupPath = Join-Path $script:HardeningContext.LogPath "fwback_$(Get-Date -Format 'yyyyMMdd_HHmmss').wfw"
-            Write-Status "Backing up current Windows Firewall policy to $FirewallBackupPath"
+            $FirewallBackupPath = Join-Path $State.Context.LogPath "fwback_$(Get-Date -Format 'yyyyMMdd_HHmmss').wfw"
+            Write-Status "Backing up current Windows Firewall policy to $FirewallBackupPath" -State $State
             $netshOutput = netsh advfirewall export "$FirewallBackupPath" 2>&1
             if ($LASTEXITCODE -eq 0 -and (Test-Path $FirewallBackupPath)) {
-                Write-Status -Level Success "Backup saved. To restore: netsh advfirewall import `"$FirewallBackupPath`""
+                Write-Status -Level Success "Backup saved. To restore: netsh advfirewall import `"$FirewallBackupPath`"" -State $State
             } else {
-                Write-Status -Level Warning "Firewall backup failed (continuing): $(($netshOutput | Out-String).Trim())"
+                Write-Status -Level Warning "Firewall backup failed (continuing): $(($netshOutput | Out-String).Trim())" -State $State
             }
 
             # Enable the firewall profiles and disable all pre-existing inbound and outbound rules
@@ -168,39 +174,39 @@ function Set-FirewallConfiguration {
             # Keep WinRM (5985 HTTP, 5986 HTTPS) reachable when hardening over a remote session.
             if ($PreserveManagementPort) {
                 $null = Set-FirewallAllowRule -Port 5986 -Protocol TCP
-                Write-Status -Level Success "Added TCP inbound rules for port 5986 (WinRM-HTTPS, preserved management port)" -LogOnly
+                Write-Status -Level Success "Added TCP inbound rules for port 5986 (WinRM-HTTPS, preserved management port)" -LogOnly -State $State
                 $null = Set-FirewallAllowRule -Port 5985 -Protocol TCP
-                Write-Status -Level Success "Added TCP inbound rules for port 5985 (WinRM-HTTP, preserved management port)" -LogOnly
+                Write-Status -Level Success "Added TCP inbound rules for port 5985 (WinRM-HTTP, preserved management port)" -LogOnly -State $State
             }
 
             # If ports are specified, create Allow rules for them (with higher priority than Deny All so they're evaluated first)
             if ($portsToAllow.Count -gt 0) {
-                Write-Status "Creating Allow rules for specified ports..."
+                Write-Status "Creating Allow rules for specified ports..." -State $State
                 foreach ($port in $portsToAllow) {
                     # Skip the preserved management ports - their Allow rules were already created above.
                     if ($PreserveManagementPort -and ($port -eq 5986 -or $port -eq 5985)) {
                         continue
                     }
 
-                    $description = Get-FirewallPortDescription -Port $port
+                    $description = Get-FirewallPortDescription -Port $port -State $State
 
                     if ($isDC) {
                         # AD: create both TCP and UDP Allow rules
                         $null = Set-FirewallAllowRule -Port $port -Protocol TCP
                         $null = Set-FirewallAllowRule -Port $port -Protocol UDP
-                        Write-Status -Level Success "Added inbound rules for port $port ($description)" -LogOnly
+                        Write-Status -Level Success "Added inbound rules for port $port ($description)" -LogOnly -State $State
                     } else {
                         # Local: create TCP-only Allow rule
                         $null = Set-FirewallAllowRule -Port $port -Protocol TCP
-                        Write-Status -Level Success "Added TCP inbound rules for port $port ($description)" -LogOnly
+                        Write-Status -Level Success "Added TCP inbound rules for port $port ($description)" -LogOnly -State $State
                     }
                 }
-                Write-Status -Level Success "Allow rules created for ports: $($portsToAllow -join ', ')" -LogMessage "Firewall configured with ports: $($portsToAllow -join ', ')"
+                Write-Status -Level Success "Allow rules created for ports: $($portsToAllow -join ', ')" -LogMessage "Firewall configured with ports: $($portsToAllow -join ', ')" -State $State
             } else {
                 if ($isDC) {
-                    Write-Status "No ports specified - only AD rules applied" -LogMessage "Firewall configured with AD rules only (no other ports allowed)"
+                    Write-Status "No ports specified - only AD rules applied" -LogMessage "Firewall configured with AD rules only (no other ports allowed)" -State $State
                 } else {
-                    Write-Status "No ports specified - only Deny All Inbound rule applied" -LogMessage "Firewall configured with Deny All Inbound rule only (no ports allowed)"
+                    Write-Status "No ports specified - only Deny All Inbound rule applied" -LogMessage "Firewall configured with Deny All Inbound rule only (no ports allowed)" -State $State
                 }
             }
 
@@ -214,16 +220,16 @@ function Set-FirewallConfiguration {
                     Where-Object { $_.DisplayGroup -in 'Active Directory Domain Services', 'DFS Replication' })
                 if ($adRules.Count -gt 0) {
                     $adRules | Set-NetFirewallRule -RemoteAddress LocalSubnet -Enabled True
-                    Write-Status -Level Success "Re-enabled $($adRules.Count) AD DS / DFS Replication rule(s) for the local subnet"
+                    Write-Status -Level Success "Re-enabled $($adRules.Count) AD DS / DFS Replication rule(s) for the local subnet" -State $State
                 } else {
-                    Write-Status -Level Warning "No 'Active Directory Domain Services' firewall rules found; AD RPC traffic (replication, domain joins) may be blocked"
+                    Write-Status -Level Warning "No 'Active Directory Domain Services' firewall rules found; AD RPC traffic (replication, domain joins) may be blocked" -State $State
                 }
             }
 
-            Write-Status -Level Success "Firewall configured successfully" -LogMessage "Firewall configuration completed"
+            Write-Status -Level Success "Firewall configured successfully" -LogMessage "Firewall configuration completed" -State $State
         } catch {
             if ($_.Exception -isnot [System.OperationCanceledException]) {
-                Write-Status -Level Error "Firewall configuration failed: $($_.Exception.Message)"
+                Write-Status -Level Error "Firewall configuration failed: $($_.Exception.Message)" -State $State
             }
             throw
         }

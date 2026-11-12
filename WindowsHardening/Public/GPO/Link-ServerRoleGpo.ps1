@@ -1,4 +1,4 @@
-function Link-ServerRoleGpo {
+﻿function Link-ServerRoleGpo {
     <#
     .SYNOPSIS
         Imports and links a firewall GPO for the selected server computer accounts.
@@ -11,7 +11,12 @@ function Link-ServerRoleGpo {
         [Parameter(Mandatory=$true)][ValidateSet('Web', 'Mail')][string]$Role,
         [Parameter(Mandatory=$true)][string[]]$ComputerName,
         [Parameter(Mandatory=$true)][string]$BackupRoot
+    ,
+        [object]$State = $null,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     if (-not $ComputerName -or $ComputerName.Count -eq 0) { return }
 
@@ -20,8 +25,8 @@ function Link-ServerRoleGpo {
         'Mail'     { 'Mail Servers Firewall Policy'; break }
     }
 
-    Invoke-HardeningOperation -OperationName "Link $Role Server GPO" -TargetComputerName $ComputerName -ScriptBlock {
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Link $Role Server GPO" -TargetComputerName $ComputerName -ScriptBlock {
         Invoke-CcdcGpoLinkOperation -Name $gpoName -BackupRoot $BackupRoot `
-            -Target (Get-CcdcDomainRootDn) -SecurityFilter $ComputerName
+            -Target (Get-CcdcDomainRootDn) -SecurityFilter $ComputerName -State $State
     }
 }

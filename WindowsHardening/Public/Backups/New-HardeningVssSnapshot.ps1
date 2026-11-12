@@ -11,19 +11,21 @@ function New-HardeningVssSnapshot {
         PSCustomObject with volume, snapshot ID, and status for each attempted volume.
     #>
     [CmdletBinding()]
-    param()
+    param([object]$State = $null)
+
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
     try {
         $volumes = @(Get-CimInstance -ClassName Win32_Volume -Filter 'DriveType = 3' -ErrorAction Stop |
             Sort-Object DeviceID)
     } catch {
         $message = "Could not enumerate fixed volumes for VSS snapshots: $($_.Exception.Message)"
-        Write-Status -Level Warning $message
+        Write-Status -Level Warning $message -State $State
         return
     }
 
     if ($volumes.Count -eq 0) {
-        Write-Status -Level Warning 'No local fixed volumes were found for VSS snapshots'
+        Write-Status -Level Warning 'No local fixed volumes were found for VSS snapshots' -State $State
         return
     }
 
@@ -31,7 +33,7 @@ function New-HardeningVssSnapshot {
         $volumeId = $volume.DeviceID
         $label = if ($volume.DriveLetter) { $volume.DriveLetter } else { $volumeId }
         if ($volume.FileSystem -notin @('NTFS', 'ReFS')) {
-            Write-Status -Level Warning "Skipping VSS snapshot for $label; file system '$($volume.FileSystem)' is not supported by this helper"
+            Write-Status -Level Warning "Skipping VSS snapshot for $label; file system '$($volume.FileSystem)' is not supported by this helper" -State $State
             [pscustomobject]@{ Volume = $volumeId; SnapshotId = $null; Status = 'Skipped'; ReturnValue = $null }
             continue
         }
@@ -43,15 +45,15 @@ function New-HardeningVssSnapshot {
 
             if ($result.ReturnValue -ne 0 -or -not $result.ShadowID) {
                 $message = "VSS snapshot failed for $label (return code $($result.ReturnValue))"
-                Write-Status -Level Warning $message
+                Write-Status -Level Warning $message -State $State
                 [pscustomobject]@{ Volume = $volumeId; SnapshotId = $null; Status = 'Failed'; ReturnValue = $result.ReturnValue }
                 continue
             }
 
-            Write-Status -Level Success "VSS snapshot created for $label (ID $($result.ShadowID))"
+            Write-Status -Level Success "VSS snapshot created for $label (ID $($result.ShadowID))" -State $State
             [pscustomobject]@{ Volume = $volumeId; SnapshotId = [string]$result.ShadowID; Status = 'Created'; ReturnValue = 0 }
         } catch {
-            Write-Status -Level Warning "VSS snapshot failed for $label; continuing: $($_.Exception.Message)"
+            Write-Status -Level Warning "VSS snapshot failed for $label; continuing: $($_.Exception.Message)" -State $State
             [pscustomobject]@{ Volume = $volumeId; SnapshotId = $null; Status = 'Failed'; ReturnValue = $null; Error = $_.Exception.Message }
         }
     }

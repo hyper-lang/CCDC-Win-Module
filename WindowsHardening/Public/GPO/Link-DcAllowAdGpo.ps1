@@ -1,8 +1,13 @@
-function Link-DcAllowAdGpo {
+﻿function Link-DcAllowAdGpo {
     [CmdletBinding()]
-    param([Parameter(Mandatory=$true)][string]$BackupRoot)
+    param([Parameter(Mandatory=$true)][string]$BackupRoot,
+        [object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName 'Link DC Allow AD GPO' -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName 'Link DC Allow AD GPO' -ScriptBlock {
         # Firewall profiles come from the root-linked domain firewall GPO; this GPO layers
         # the DC-only allow rules on top of it.
         $gpo = Import-CcdcGpo -Name 'DC Allow AD' -BackupRoot $BackupRoot
@@ -16,9 +21,10 @@ function Link-DcAllowAdGpo {
         )) {
             $typoRules = @(Get-NetFirewallRule -PolicyStore $policyStore -DisplayName $ruleName.Old -ErrorAction Stop)
             if ($typoRules.Count -gt 0) {
-                Set-NetFirewallRule -PolicyStore $policyStore -DisplayName $ruleName.Old `
-                    -NewDisplayName $ruleName.New -ErrorAction Stop
-                Write-Status "Corrected firewall rule name '$($ruleName.Old)' to '$($ruleName.New)' in '$($gpo.DisplayName)'"
+                # The spelling affects display only. Set-NetFirewallRule -NewDisplayName
+                # can throw ERROR_REVISION_MISMATCH against a GPO store, so retain the
+                # bundled name and avoid making a cosmetic update block functional rules.
+                Write-Status -Level Warning "Keeping bundled firewall rule name '$($ruleName.Old)' (cosmetic rename skipped)" -State $State
             }
         }
 
@@ -45,12 +51,12 @@ function Link-DcAllowAdGpo {
             Direction = 'Outbound'; Protocol = 'TCP'; RemotePort = @('135', '49152-65535')
             RemoteAddress = $dcAddresses
         }
-        Write-Status "Outbound RPC between domain controllers allowed for: $($dcAddresses -join ', ')"
+        Write-Status "Outbound RPC between domain controllers allowed for: $($dcAddresses -join ', ')" -State $State
         $targets = Get-CcdcDomainControllersOu
         foreach ($target in $targets) {
             Add-CcdcGpoLink -Name $gpo.DisplayName -Target $target -Enforced
         }
         Write-Status -Level Success "Imported 'DC Allow AD' and linked it to $($targets.Count) Domain Controllers OU(s)" `
-            -LogMessage "Imported GPO 'DC Allow AD' and linked to $($targets -join '; ')"
+            -LogMessage "Imported GPO 'DC Allow AD' and linked to $($targets -join '; ')" -State $State
     }
 }

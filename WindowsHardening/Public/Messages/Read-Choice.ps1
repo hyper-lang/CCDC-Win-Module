@@ -61,7 +61,9 @@ function Read-Choice {
 
         [switch]$AllowQuit,
 
-        [string]$QuitLabel = 'Cancel'
+        [string]$QuitLabel = 'Cancel',
+
+        [object]$State = $null
     )
 
     # -- Normalize options ---------------------------------------------------
@@ -89,14 +91,14 @@ function Read-Choice {
     foreach ($item in $items) { $byKey[$item.Key.ToUpper()] = $item }
 
     # -- Display -------------------------------------------------------------
-    if ($Title) { Write-Banner $Title -Style Inline -Color Green }
+    if ($Title) { Write-Banner $Title -Style Inline -Color Green -State $State }
     $shown = @($items | Where-Object { -not $_.Hidden })
     $keyWidth = ($shown | ForEach-Object { $_.Key.Length } | Measure-Object -Maximum).Maximum
     if ($AllowQuit -and $keyWidth -lt 1) { $keyWidth = 1 }
     $currentSection = $null
     foreach ($item in $shown) {
         if ($item.Section -and $item.Section -ne $currentSection) {
-            Write-Banner $item.Section -Style Inline
+            Write-Banner $item.Section -Style Inline -State $State
             $currentSection = $item.Section
         }
         $marker = if ($Default -contains $item.Key) { ' *' } else { '' }

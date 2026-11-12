@@ -1,4 +1,4 @@
-function Invoke-DomainHardening {
+﻿function Invoke-DomainHardening {
     <#
     .SYNOPSIS
         Hardens a domain controller and links the competition GPOs for the domain.
@@ -31,22 +31,28 @@ function Invoke-DomainHardening {
     .PARAMETER RoleServers
         Hashtable mapping role names to computer names. Database creates an MSSQL firewall
         GPO (TCP 1433 and UDP 1434); Web and Mail use bundled firewall GPOs. WinRM, SSH,
-        RDP, FTP, and SMB create service access GPOs.
+        RDP, FTP, SMB, Ping, and SNMP create role GPOs. Service roles configure startup
+        where applicable; RDP, SSH, and WinRM grant Domain Users membership in the
+        corresponding local access group. Application and database permissions still
+        require product-specific configuration.
         If omitted, the run offers computer selections for each role. Use -NoPrompt to
         skip role assignments when running unattended.
     .PARAMETER WinRMRemoteAddress
         Remote address or CIDR entries allowed to manage selected WinRM servers.
         Defaults to Any for WinRM GPOs linked by Invoke-DomainHardening.
     .PARAMETER RoleRemoteAddress
-        Hashtable of remote address scopes for the Database, WinRM, SSH, RDP, FTP, and
-        SMB roles, for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any (WinRM
-        uses -WinRMRemoteAddress).
+        Hashtable of remote address scopes for Database, WinRM, SSH, RDP, FTP, SMB, Ping,
+        and SNMP roles, for example @{ RDP = 'LocalSubnet' }. Unlisted roles use Any
+        (WinRM uses -WinRMRemoteAddress).
     .PARAMETER NoPrompt
         Skip server role selection prompts. If Splunk is not skipped, pass -SplunkIP.
     .PARAMETER SplunkIP
         Splunk indexer address. Prompts if omitted and Splunk installation is enabled.
     .PARAMETER SkipSplunk
         Skip the final Splunk installation step.
+    .PARAMETER SkipSplunkOutbound
+        Do not link the domain Splunk outbound firewall GPO. This does not skip Splunk
+        installation; use -SkipSplunk separately to skip installation.
     .PARAMETER FirewallPortRulesToAdd
         Optional hashtables passed to Add-DomainFirewallPortRule. Each needs Name,
         ComputerName, and Port (ports and/or ranges such as '50000-50100'); Protocol,
@@ -61,6 +67,9 @@ function Invoke-DomainHardening {
     .EXAMPLE
         Invoke-DomainHardening -NoPrompt -RoleServers @{ Database = @('DB01'); Web = @('WEB01') } -SplunkIP '10.0.0.20'
         # Supplies server roles and Splunk address without prompts.
+    .EXAMPLE
+        Invoke-DomainHardening -SkipSplunkOutbound -SkipSplunk
+        # Runs the hardening sequence without linking Splunk egress or installing Splunk.
     #>
     [CmdletBinding()]
     param(
@@ -75,12 +84,19 @@ function Invoke-DomainHardening {
         [switch]$NoPrompt,
         [string]$SplunkIP,
         [switch]$SkipSplunk,
+        [switch]$SkipSplunkOutbound,
         [hashtable[]]$FirewallPortRulesToAdd = @(),
         [string[]]$FirewallPortRulesToRemove = @(),
         [string]$LogPath
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
 
-    if (-not $script:HardeningContext.OS -or -not $script:HardeningContext.OS.IsDomainController) {
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
+    if (-not $State.Context.OS -or -not $State.Context.OS.IsDomainController) {
         throw 'Invoke-DomainHardening must be run on a domain controller.'
     }
     if ($NoPrompt -and -not $SkipSplunk -and -not $SplunkIP) {
@@ -91,23 +107,22 @@ function Invoke-DomainHardening {
     }
 
     $errorCountAtStart = $global:Error.Count
-    Write-Banner 'Domain Hardening'
-    Initialize-System -Force -LogPath $LogPath
+    Write-Banner 'Domain Hardening' -State $State
+    Initialize-System -Force -LogPath $LogPath -State $State
 
     try {
-        Test-Prerequisites
+        Test-Prerequisites -State $State
     } catch {
-        Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)"
+        Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)" -State $State
+        Flush-HardeningLog -State $State
         throw
     }
 
     if ($SkipPasswordChange) {
-        Write-Status -Level Skip 'Administrator password change, Zulu rotation, and CCDC account creation skipped (-SkipPasswordChange)'
+        Write-Status -Level Skip 'Administrator password change, Zulu rotation, and CCDC account creation skipped (-SkipPasswordChange)' -State $State
     } else {
-        $script:NextStepLabel = 'Domain 1/13'
-        Set-AdministratorPassword -SaltPhrase $SaltPhrase
-        $script:NextStepLabel = 'Domain 2/13'
-        Set-ZuluPassword -SaltPhrase $SaltPhrase
+        Set-AdministratorPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Domain 1/13'
+        Set-ZuluPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Domain 2/13'
     }
 
     # Run password operations before downloading the packaged GPO archive or
@@ -115,34 +130,33 @@ function Invoke-DomainHardening {
     try {
         Initialize-CcdcGpoEnvironment -GpoZipPath $GpoZipPath -GpoCachePath $GpoCachePath | Out-Null
         $backupRoot = if ($GpoCachePath) { Join-Path $GpoCachePath 'Backups' } else { Join-Path ([System.IO.Path]::GetTempPath()) 'CCDC-GPOs\Backups' }
-        $domainGpoBackup = Backup-DomainGpos -Path $GpoBackupPath
-        Write-Status "Pre-hardening domain GPO backup: $domainGpoBackup"
+        $domainGpoBackup = Backup-DomainGpos -Path $GpoBackupPath -State $State
+        Write-Status "Pre-hardening domain GPO backup: $domainGpoBackup" -State $State
     } catch {
-        Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)"
+        Write-Status -Level Error "Domain hardening pre-flight failed: $($_.Exception.Message)" -State $State
+        Flush-HardeningLog -State $State
         throw
     }
 
-    $script:NextStepLabel = 'Domain 3/13'
-    Remove-AdminUsers
+    Remove-AdminUsers -State $State -StepLabel 'Domain 3/13'
 
-    Write-Banner 'Pre-linking VSS snapshot' -Style Inline -Log
-    $null = New-HardeningVssSnapshot
+    Write-Banner 'Pre-linking VSS snapshot' -Style Inline -Log -State $State
+    $null = New-HardeningVssSnapshot -State $State
 
-    Write-Banner 'Link domain policies' -Style Inline -Log
-    $script:NextStepLabel = 'Domain 4/13'
-    Link-DcAllowAdGpo -BackupRoot $backupRoot
+    Write-Banner 'Link domain policies' -Style Inline -Log -State $State
+    Link-DcAllowAdGpo -BackupRoot $backupRoot -State $State -StepLabel 'Domain 4/13'
 
-    $script:NextStepLabel = 'Domain 5/13'
-    Link-DomainFirewallGpo -BackupRoot $backupRoot
+    Link-DomainFirewallGpo -BackupRoot $backupRoot -State $State -StepLabel 'Domain 5/13'
 
-    $script:NextStepLabel = 'Domain 6/13'
-    Link-DomainSplunkOutboundGpo -BackupRoot $backupRoot
+    if ($SkipSplunkOutbound) {
+        Write-Status -Level Skip 'Domain Splunk outbound firewall GPO skipped (-SkipSplunkOutbound)' -State $State
+    } else {
+        Link-DomainSplunkOutboundGpo -BackupRoot $backupRoot -State $State -StepLabel 'Domain 6/13'
+    }
 
-    $script:NextStepLabel = 'Domain 7/13'
-    Link-DomainGpoUpdateInterval -BackupRoot $backupRoot
+    Link-DomainGpoUpdateInterval -BackupRoot $backupRoot -State $State -StepLabel 'Domain 7/13'
 
-    $script:NextStepLabel = 'Domain 8/13'
-    Link-DomainGoodGpo -BackupRoot $backupRoot
+    Link-DomainGoodGpo -BackupRoot $backupRoot -State $State -StepLabel 'Domain 8/13'
 
     $roleDefinitions = @(
         @{ Role = 'Database'; Label = 'Database'; Step = 'Domain 9/13' }
@@ -153,6 +167,8 @@ function Invoke-DomainHardening {
         @{ Role = 'RDP';      Label = 'RDP';      Step = 'Domain 9/13' }
         @{ Role = 'FTP';      Label = 'FTP (IIS FTP service)'; Step = 'Domain 9/13' }
         @{ Role = 'SMB';      Label = 'SMB file sharing'; Step = 'Domain 9/13' }
+        @{ Role = 'Ping';     Label = 'Ping'; Step = 'Domain 9/13' }
+        @{ Role = 'SNMP';     Label = 'SNMP'; Step = 'Domain 9/13' }
     )
     foreach ($definition in $roleDefinitions) {
         $servers = @()
@@ -172,70 +188,66 @@ function Invoke-DomainHardening {
                 })
                 $servers = Read-Choice -Title "$($definition.Label) servers" `
                     -Prompt "Select computers that need the $($definition.Label) policy" `
-                    -Options $options -Multiple -AllowEmpty -Hint 'Enter one or more option numbers (for example 1,3)'
+                    -Options $options -Multiple -AllowEmpty -Hint 'Enter one or more option numbers (for example 1,3)' -State $State
                 if ($null -eq $servers) { $servers = @() }
             }
         }
 
         if ($servers.Count -gt 0) {
-            $script:NextStepLabel = $definition.Step
             if ($roleKey -in @('Web', 'Mail')) {
-                Link-ServerRoleGpo -Role $roleKey -ComputerName $servers -BackupRoot $backupRoot
+                Link-ServerRoleGpo -Role $roleKey -ComputerName $servers -BackupRoot $backupRoot -State $State -StepLabel $definition.Step
             } else {
                 $remoteAddress = if ($RoleRemoteAddress.ContainsKey($roleKey)) { @($RoleRemoteAddress[$roleKey]) }
                     elseif ($roleKey -eq 'WinRM') { $WinRMRemoteAddress }
                     else { $null }
-                Link-ServerServiceGpo -Role $roleKey -ComputerName $servers -RemoteAddress $remoteAddress
+                Link-ServerServiceGpo -Role $roleKey -ComputerName $servers -RemoteAddress $remoteAddress -State $State -StepLabel $definition.Step
             }
         } else {
-            Write-Status -Level Skip "No $($definition.Label) servers selected; role GPO not linked" -LogMessage "No $($definition.Role) role servers selected"
+            Write-Status -Level Skip "No $($definition.Label) servers selected; role GPO not linked" -LogMessage "No $($definition.Role) role servers selected" -State $State
         }
     }
 
-    $script:NextStepLabel = 'Domain 10/13'
     foreach ($portRule in $FirewallPortRulesToAdd) {
-        Add-DomainFirewallPortRule @portRule
+        Add-DomainFirewallPortRule @portRule -State $State -StepLabel 'Domain 10/13'
     }
     foreach ($portRuleName in $FirewallPortRulesToRemove) {
-        Remove-DomainFirewallPortRule -Name $portRuleName
+        Remove-DomainFirewallPortRule -Name $portRuleName -State $State -StepLabel 'Domain 10/13'
     }
     if ($FirewallPortRulesToAdd.Count -eq 0 -and $FirewallPortRulesToRemove.Count -eq 0) {
-        Write-Status -Level Skip 'No additional domain firewall port rules requested'
+        Write-Status -Level Skip 'No additional domain firewall port rules requested' -State $State
     }
 
-    Write-Banner 'Refresh Group Policy' -Style Inline -Log
-    $script:NextStepLabel = 'Domain 11/13'
-    Invoke-HardeningOperation -OperationName 'Refresh Group Policy' -ScriptBlock {
+    Write-Banner 'Refresh Group Policy' -Style Inline -Log -State $State
+    Invoke-HardeningOperation -State $State -OperationName 'Refresh Group Policy' -StepLabel 'Domain 11/13' -ScriptBlock {
         try {
             Invoke-CcdcGpUpdate
-            Write-Status -Level Success 'gpupdate /force completed successfully'
+            Write-Status -Level Success 'gpupdate /force completed successfully' -State $State
         } catch {
-            Write-Status -Level Warning "gpupdate /force failed; continuing: $($_.Exception.Message)" -LogMessage "gpupdate /force failed: $($_.Exception.Message)"
+            Write-Status -Level Warning "gpupdate /force failed; continuing: $($_.Exception.Message)" -LogMessage "gpupdate /force failed: $($_.Exception.Message)" -State $State
             throw
         }
     }
 
-    Write-Banner 'Final configuration' -Style Inline -Log
+    Write-Banner 'Final configuration' -Style Inline -Log -State $State
     if ($SkipSplunk) {
-        Write-Status -Level Skip 'Splunk installation skipped (-SkipSplunk)'
+        Write-Status -Level Skip 'Splunk installation skipped (-SkipSplunk)' -State $State
     } else {
-        if (-not $SplunkIP) { $SplunkIP = Read-HostAddress -Prompt 'Splunk server IP' }
-        $script:NextStepLabel = 'Domain 12/13'
-        Install-Splunk -IP $SplunkIP
+        if (-not $SplunkIP) { $SplunkIP = Read-HostAddress -Prompt 'Splunk server IP' -State $State }
+        Install-Splunk -IP $SplunkIP -State $State -StepLabel 'Domain 12/13'
     }
 
     if ($SkipPasswordChange) {
-        Write-Status -Level Skip 'CCDC account creation skipped (-SkipPasswordChange)'
+        Write-Status -Level Skip 'CCDC account creation skipped (-SkipPasswordChange)' -State $State
     } else {
-        $script:NextStepLabel = 'Domain 13/13'
-        Create-CCDCUsers -SaltPhrase $SaltPhrase
+        Create-CCDCUsers -SaltPhrase $SaltPhrase -State $State -StepLabel 'Domain 13/13'
     }
 
-    Write-Banner 'Domain Hardening Complete' -Style Inline -Color Green -Log
-    Show-OperationSummary
+    Write-Banner 'Domain Hardening Complete' -Style Inline -Color Green -Log -State $State
+    Show-OperationSummary -State $State
     $newErrorCount = $global:Error.Count - $errorCountAtStart
     if ($newErrorCount -gt 0) {
-        Write-Status -Level Warning "$newErrorCount error record(s) were written during this run" -LogMessage "Domain hardening recorded $newErrorCount error record(s)"
+        Write-Status -Level Warning "$newErrorCount error record(s) were written during this run" -LogMessage "Domain hardening recorded $newErrorCount error record(s)" -State $State
     }
-    Write-Status "Log file location: $script:LogFile"
+    Write-Status "Log file location: $($State.LogFile)" -State $State
+    Flush-HardeningLog -State $State
 }

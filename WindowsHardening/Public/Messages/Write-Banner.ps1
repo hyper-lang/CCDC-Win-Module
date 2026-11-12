@@ -48,13 +48,15 @@ function Write-Banner {
         [ValidateRange(10, 200)]
         [int]$Width = 40,
 
-        [switch]$Log
+        [switch]$Log,
+
+        [object]$State = $null
     )
 
     if ($Style -eq 'Inline') {
         $titleColor = if ($PSBoundParameters.ContainsKey('Color')) { $Color } else { 'Cyan' }
         Write-Host "`n=== $Title ===" -ForegroundColor $titleColor
-        if ($Log) { Write-Log -Level INFO -Message "=== $Title ===" }
+        if ($Log) { Write-Status "=== $Title ===" -LogOnly -State $State }
         return
     }
 
@@ -67,8 +69,8 @@ function Write-Banner {
     }
     Write-Host $border -ForegroundColor Cyan
 
-    Write-Log -Level INFO -Message "===== $Title ====="
+    Write-Status "===== $Title =====" -LogOnly -State $State
     foreach ($line in $Body) {
-        Write-Log -Level INFO -Message $line
+        Write-Status $line -LogOnly -State $State
     }
 }

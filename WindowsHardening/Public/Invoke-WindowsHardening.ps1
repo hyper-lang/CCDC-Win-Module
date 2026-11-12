@@ -112,7 +112,13 @@
         [string]$SplunkIP,
 
         [switch]$SkipSplunk
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
+
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
     if ($SkipRDP -and $DisableRDP) {
         throw "-SkipRDP and -DisableRDP cannot be used together"
@@ -131,15 +137,15 @@
             $ports = ConvertTo-PortList -Ports $FirewallPorts
             $extraPorts = ConvertTo-PortList -Ports $AdditionalPorts
         } catch {
-            Write-Status -Level Error "Failed to parse FirewallPorts parameter: $($_.Exception.Message)"
+            Write-Status -Level Error "Failed to parse FirewallPorts parameter: $($_.Exception.Message)" -State $State
             throw "Invalid FirewallPorts parameter: $($_.Exception.Message)"
         }
     }
     if ($ports.Count -gt 0) {
-        Write-Status "Firewall ports provided via parameter: $($ports -join ', ')"
+        Write-Status "Firewall ports provided via parameter: $($ports -join ', ')" -State $State
     }
     if ($extraPorts.Count -gt 0) {
-        Write-Status "Additional firewall ports: $($extraPorts -join ', ')"
+        Write-Status "Additional firewall ports: $($extraPorts -join ', ')" -State $State
     }
 
     # Check -SplunkIP now, so a typo fails before hardening starts rather than at step 4.
@@ -151,14 +157,14 @@
     $errorCountAtStart = $global:Error.Count
 
     # -- Banner --------------------------------------------------------------
-    Write-Banner "Windows Hardening MODULE v1.0"
+    Write-Banner "Windows Hardening MODULE v1.0" -State $State
 
     # -- Initialize (OS detection, logging, context) -------------------------
-    Initialize-System -Force -LogPath $LogPath
+    Initialize-System -Force -LogPath $LogPath -State $State
 
-    $osInfo = $script:HardeningContext.OS
+    $osInfo = $State.Context.OS
     if ($osInfo) {
-        Write-Banner "Detected Operating System" -Color Yellow -Body @(
+        Write-Banner "Detected Operating System" -Color Yellow -State $State -Body @(
             "OS Version: $($osInfo.OSVersion)"
             "Build Number: $($osInfo.BuildNumber)"
             "Edition: $($osInfo.Edition)"
@@ -167,8 +173,8 @@
         )
     } else {
         Write-Host ""
-        Write-Status -Level Error "Failed to detect operating system."
-        if ((Read-YesNo -Message "The script may not function correctly. Continue anyway? (y/n) ") -ne 'y') {
+        Write-Status -Level Error "Failed to detect operating system." -State $State
+        if ((Read-YesNo -Message "The script may not function correctly. Continue anyway? (y/n) " -State $State) -ne 'y') {
             throw "OS detection failed. Script aborted by user."
         }
     }
@@ -176,181 +182,169 @@
     # -- AD status display (detected at module import) ------------------------
     if ($osInfo) {
         if ($osInfo.IsDomainJoined) {
-            Write-Banner "Active Directory Status: DOMAIN JOINED$(if ($osInfo.IsDomainController) { ' (Domain Controller)' })" -Body "Domain: $($osInfo.Domain)"
+            Write-Banner "Active Directory Status: DOMAIN JOINED$(if ($osInfo.IsDomainController) { ' (Domain Controller)' })" -Body "Domain: $($osInfo.Domain)" -State $State
         } else {
-            Write-Banner "Active Directory Status: NOT DOMAIN JOINED" -Body "Workgroup: $($osInfo.Workgroup)" -Color Yellow
+            Write-Banner "Active Directory Status: NOT DOMAIN JOINED" -Body "Workgroup: $($osInfo.Workgroup)" -Color Yellow -State $State
         }
         Write-Host ""
     }
 
     # -- Pre-flight checks ---------------------------------------------------
     try {
-        Test-Prerequisites
+        Test-Prerequisites -State $State
     } catch {
         Write-Host ""
-        Write-Status -Level Error "Pre-flight checks failed: $($_.Exception.Message)"
+        Write-Status -Level Error "Pre-flight checks failed: $($_.Exception.Message)" -State $State
+        Flush-HardeningLog -State $State
         throw "Pre-flight checks failed: $($_.Exception.Message)"
     }
 
     # -- Hardening sequence ---------------------------------------------------
     if ($SkipPasswordChange) {
-        Write-Status "Administrator password change, password rotation, and CCDC account creation will be skipped (-sp)"
+        Write-Status "Administrator password change, password rotation, and CCDC account creation will be skipped (-sp)" -State $State
     }
     if ($SkipRDP) {
-        Write-Status "RDP group reset and RDP disable will be skipped (RDP stays enabled)"
+        Write-Status "RDP group reset and RDP disable will be skipped (RDP stays enabled)" -State $State
     }
     if ($SkipWinRM) {
         if ($SkipFirewall) {
-            Write-Status "WinRM will be kept enabled; firewall rules will remain unchanged (-SkipFirewall)"
+            Write-Status "WinRM will be kept enabled; firewall rules will remain unchanged (-SkipFirewall)" -State $State
         } else {
-            Write-Status "WinRM will be kept enabled and TCP 5985/5986 will be allowed"
+            Write-Status "WinRM will be kept enabled and TCP 5985/5986 will be allowed" -State $State
         }
     }
     if ($SkipFirewall) {
-        Write-Status -Level Skip "Firewall configuration and firewall rule changes will be skipped (-SkipFirewall)"
+        Write-Status -Level Skip "Firewall configuration and firewall rule changes will be skipped (-SkipFirewall)" -State $State
     }
 
-    Write-Banner "Step 1/13: Change Administrator password" -Style Inline -Log
+    Write-Banner "Step 1/13: Change Administrator password" -Style Inline -Log -State $State
     if ($SkipPasswordChange) {
-        Write-Status -Level Skip "Administrator password change skipped (-SkipPasswordChange)"
+        Write-Status -Level Skip "Administrator password change skipped (-SkipPasswordChange)" -State $State
     } else {
-        $script:NextStepLabel = 'Full Run 1/13'
-        Set-AdministratorPassword -SaltPhrase $SaltPhrase
+        Set-AdministratorPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Full Run 1/13'
     }
 
-    Write-Banner "Step 2/13: Remove unauthorized administrators" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 2/13'
-    Remove-AdminUsers
+    Write-Banner "Step 2/13: Remove unauthorized administrators" -Style Inline -Log -State $State
+    Remove-AdminUsers -State $State -StepLabel 'Full Run 2/13'
 
-    Write-Banner "Step 3/13: Rotate existing user passwords" -Style Inline -Log
+    Write-Banner "Step 3/13: Rotate existing user passwords" -Style Inline -Log -State $State
     if ($SkipPasswordChange) {
-        Write-Status -Level Skip "Existing-user password rotation skipped (-SkipPasswordChange)"
+        Write-Status -Level Skip "Existing-user password rotation skipped (-SkipPasswordChange)" -State $State
     } else {
-        $script:NextStepLabel = 'Full Run 3/13'
-        Set-ZuluPassword -SaltPhrase $SaltPhrase
+        Set-ZuluPassword -SaltPhrase $SaltPhrase -State $State -StepLabel 'Full Run 3/13'
     }
 
-    Write-Banner "Pre-hardening VSS snapshot" -Style Inline -Log
-    $null = New-HardeningVssSnapshot
+    Write-Banner "Pre-hardening VSS snapshot" -Style Inline -Log -State $State
+    $null = New-HardeningVssSnapshot -State $State
 
     # Decide before configuring the firewall so the WinRM allow rules match the service choice.
     if (-not $SkipWinRM -and -not $DisableWinRM) {
         if ($NoPrompt) {
-            Write-Status "WinRM will be disabled (-NoPrompt; pass -SkipWinRM or -PreserveManagementPort to keep it)"
+            Write-Status "WinRM will be disabled (-NoPrompt; pass -SkipWinRM or -PreserveManagementPort to keep it)" -State $State
         } else {
             Write-Host ""
-            Write-Status -Level Warning "Disabling WinRM can end a WinRM session to this machine." -NoLog
+            Write-Status -Level Warning "Disabling WinRM can end a WinRM session to this machine." -NoLog -State $State
             $keepWinRMLabel = if ($SkipFirewall) { 'Yes - keep WinRM enabled' } else { 'Yes - keep WinRM enabled and allow TCP 5985/5986' }
             $disableWinRMLabel = if ($SkipFirewall) { 'No  - disable WinRM' } else { 'No  - disable WinRM without preserving its firewall ports' }
             try {
                 $winrmChoice = Read-Choice -Prompt "Is WinRM needed on this machine?" -Default 'Y' -Options @(
                     @{ Key = 'Y'; Label = $keepWinRMLabel; Value = 'keep' }
                     @{ Key = 'N'; Label = $disableWinRMLabel; Value = 'disable' }
-                )
+                ) -State $State
                 $SkipWinRM = $winrmChoice -eq 'keep'
             } catch {
                 Write-Status -Level Warning "Cannot ask in this session; WinRM will be disabled (pass -SkipWinRM to keep it)" `
-                    -LogMessage "WinRM prompt unavailable: $($_.Exception.Message)"
+                    -LogMessage "WinRM prompt unavailable: $($_.Exception.Message)" -State $State
             }
-            Write-Status "WinRM will be $(if ($SkipWinRM) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly
+            Write-Status "WinRM will be $(if ($SkipWinRM) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly -State $State
         }
     }
 
-    Write-Banner "Step 4/13: Configure firewall" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 4/13'
+    Write-Banner "Step 4/13: Configure firewall" -Style Inline -Log -State $State
     if ($SkipFirewall) {
-        Write-Status -Level Skip "Firewall configuration skipped (-SkipFirewall)"
+        Write-Status -Level Skip "Firewall configuration skipped (-SkipFirewall)" -State $State
     } else {
-        Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$SkipWinRM
+        Set-FirewallConfiguration -NonInteractive -Prompt:(-not $NoPrompt) -FirewallPorts $ports -AdditionalPorts $extraPorts -PreserveManagementPort:$SkipWinRM -State $State -StepLabel 'Full Run 4/13'
     }
 
-    Write-Banner "Step 5/13: Mitigate ZeroLogon" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 5/13'
+    Write-Banner "Step 5/13: Mitigate ZeroLogon" -Style Inline -Log -State $State
     if ($SkipFirewall) {
-        Write-Status -Level Skip "ZeroLogon firewall rule changes skipped (-SkipFirewall)"
+        Write-Status -Level Skip "ZeroLogon firewall rule changes skipped (-SkipFirewall)" -State $State
     } else {
-        Mitigate-ZeroLogon
+        Mitigate-ZeroLogon -State $State -StepLabel 'Full Run 5/13'
     }
 
-    Write-Banner "Step 6/13: Mitigate EternalBlue (SMBv1)" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 6/13'
-    Mitigate-EternalBlue
+    Write-Banner "Step 6/13: Mitigate EternalBlue (SMBv1)" -Style Inline -Log -State $State
+    Mitigate-EternalBlue -State $State -StepLabel 'Full Run 6/13'
 
     # This decision follows firewall and SMB changes. A skilled operator should
     # account for any resulting loss of the current remote session.
     if (-not $SkipRDP -and -not $DisableRDP) {
         if ($NoPrompt) {
-            Write-Status "RDP will be disabled (-NoPrompt; pass -SkipRDP to keep it)"
+            Write-Status "RDP will be disabled (-NoPrompt; pass -SkipRDP to keep it)" -State $State
         } else {
             Write-Host ""
-            Write-Status -Level Warning "Disabling RDP ends any RDP session to this machine, including yours." -NoLog
+            Write-Status -Level Warning "Disabling RDP ends any RDP session to this machine, including yours." -NoLog -State $State
             try {
                 $rdpChoice = Read-Choice -Prompt "Is RDP needed on this machine?" -Default 'Y' -Options @(
                     @{ Key = 'Y'; Label = 'Yes - keep RDP enabled and leave the group as is (same as -SkipRDP)'; Value = 'keep' }
                     @{ Key = 'N'; Label = 'No  - disable RDP and reset the Remote Desktop Users group'; Value = 'disable' }
-                )
+                ) -State $State
                 $SkipRDP = $rdpChoice -eq 'keep'
             } catch {
                 Write-Status -Level Warning "Cannot ask in this session; RDP will be disabled (pass -SkipRDP to keep it)" `
-                    -LogMessage "RDP prompt unavailable: $($_.Exception.Message)"
+                    -LogMessage "RDP prompt unavailable: $($_.Exception.Message)" -State $State
             }
-            Write-Status "RDP will be $(if ($SkipRDP) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly
+            Write-Status "RDP will be $(if ($SkipRDP) { 'kept' } else { 'disabled' }) (answered at the prompt)" -LogOnly -State $State
         }
     }
 
-    Write-Banner "Step 7/13: Apply RDP user choice" -Style Inline -Log
+    Write-Banner "Step 7/13: Apply RDP user choice" -Style Inline -Log -State $State
     if ($SkipRDP) {
-        Write-Status -Level Skip "RDP group reset skipped (-SkipRDP); RDP stays enabled"
+        Write-Status -Level Skip "RDP group reset skipped (-SkipRDP); RDP stays enabled" -State $State
     } else {
-        $script:NextStepLabel = 'Full Run 7/13'
-        Remove-RDPUsers
+        Remove-RDPUsers -State $State -StepLabel 'Full Run 7/13'
     }
 
-    Write-Banner "Step 8/13: Protect credentials from Mimikatz" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 8/13'
-    Protect-Mimikatz
+    Write-Banner "Step 8/13: Protect credentials from Mimikatz" -Style Inline -Log -State $State
+    Protect-Mimikatz -State $State -StepLabel 'Full Run 8/13'
 
-    Write-Banner "Step 9/13: Remove remote management services" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 9/13'
+    Write-Banner "Step 9/13: Remove remote management services" -Style Inline -Log -State $State
     $remoteManagementArgs = @{}
     if ($SkipWinRM) { $remoteManagementArgs.SkipWinRM = $true }
     if ($SkipRDP) { $remoteManagementArgs.SkipRDP = $true }
     if ($SkipFirewall) { $remoteManagementArgs.SkipFirewallRules = $true }
-    Remove-RemoteManagement @remoteManagementArgs
+    Remove-RemoteManagement @remoteManagementArgs -State $State -StepLabel 'Full Run 9/13'
 
-    Write-Banner "Step 10/13: Disable unused network protocols" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 10/13'
-    Disable-UnusedNetworkProtocols
+    Write-Banner "Step 10/13: Disable unused network protocols" -Style Inline -Log -State $State
+    Disable-UnusedNetworkProtocols -State $State -StepLabel 'Full Run 10/13'
 
-    Write-Banner "Step 11/13: Configuring Splunk" -Style Inline -Log
+    Write-Banner "Step 11/13: Configuring Splunk" -Style Inline -Log -State $State
     if ($SkipSplunk) {
-        Write-Status -Level Skip "Splunk configuration skipped (-SkipSplunk)" -LogMessage "Splunk configuration skipped per -SkipSplunk"
+        Write-Status -Level Skip "Splunk configuration skipped (-SkipSplunk)" -LogMessage "Splunk configuration skipped per -SkipSplunk" -State $State
     } else {
-        $script:NextStepLabel = 'Full Run 11/13'
         if ([string]::IsNullOrEmpty($SplunkIP)) {
-            $SplunkIP = Read-HostAddress -Prompt "Splunk server IP"
+            $SplunkIP = Read-HostAddress -Prompt "Splunk server IP" -State $State
         }
-        Install-Splunk -IP $SplunkIP
+        Install-Splunk -IP $SplunkIP -State $State -StepLabel 'Full Run 11/13'
     }
 
-    Write-Banner "Step 12/13: Creating CCDC competition accounts" -Style Inline -Log
+    Write-Banner "Step 12/13: Creating CCDC competition accounts" -Style Inline -Log -State $State
     if (-not $SkipPasswordChange) {
-        $script:NextStepLabel = 'Full Run 12/13'
-        Create-CCDCUsers -SaltPhrase $SaltPhrase
+        Create-CCDCUsers -SaltPhrase $SaltPhrase -State $State -StepLabel 'Full Run 12/13'
     } else {
-        Write-Status -Level Skip "CCDC account creation skipped (-SkipPasswordChange)"
+        Write-Status -Level Skip "CCDC account creation skipped (-SkipPasswordChange)" -State $State
     }
 
-    Write-Banner "Step 13/13: Setting Execution Policy to Restricted" -Style Inline -Log
-    $script:NextStepLabel = 'Full Run 13/13'
-    Set-RestrictedExecutionPolicy
+    Write-Banner "Step 13/13: Setting Execution Policy to Restricted" -Style Inline -Log -State $State
+    Set-RestrictedExecutionPolicy -State $State -StepLabel 'Full Run 13/13'
 
     Write-Host ""
-    Write-Status -Level Warning "All sections applied. Next: enable Windows Defender, then run Windows Updates."
+    Write-Status -Level Warning "All sections applied. Next: enable Windows Defender, then run Windows Updates." -State $State
 
     # -- Final summary -------------------------------------------------------
-    Write-Banner "Script Completed" -Style Inline -Color Green -Log
-    Show-OperationSummary
+    Write-Banner "Script Completed" -Style Inline -Color Green -Log -State $State
+    Show-OperationSummary -State $State
 
     # $Error is newest-first, so this run's errors are the first (new count) entries
     $newErrorCount = $global:Error.Count - $errorCountAtStart
@@ -358,23 +352,25 @@
         try {
             $errorFile = "$env:USERPROFILE\Desktop\hard.txt"
             $global:Error[0..($newErrorCount - 1)] | Out-File $errorFile -Append -Encoding utf8
-            Write-Status "Errors written to $errorFile" -LogOnly
+            Write-Status "Errors written to $errorFile" -LogOnly -State $State
         } catch {
-            Write-Status -Level Warning "Could not write errors to file: $($_.Exception.Message)"
+            Write-Status -Level Warning "Could not write errors to file: $($_.Exception.Message)" -State $State
         }
     }
 
-    Write-Status -LogOnly "=== Script Execution Completed ==="
-    Write-Status "Log file location: $script:LogFile"
+    Write-Status -LogOnly "=== Script Execution Completed ===" -State $State
+    Write-Status "Log file location: $($State.LogFile)" -State $State
 
     Write-Host "`n" -NoNewline
     Write-Host ("=" * 60) -ForegroundColor Cyan
-    if ($script:OperationResults.Failed -eq 0 -and $script:OperationResults.Skipped -eq 0) {
-        Write-Status -Level Success "Hardening completed successfully! All $($script:OperationResults.Total) operation(s) completed without errors." -LogMessage "=== Hardening completed successfully ==="
-    } elseif ($script:OperationResults.Failed -eq 0) {
-        Write-Status -Level Warning "Hardening completed with warnings! All operations completed, but $($script:OperationResults.Skipped) operation(s) were skipped (see details above)." -LogMessage "=== Hardening completed with warnings ==="
+    $finalSummary = Get-HardeningSummarySnapshot -State $State
+    if ($finalSummary.Failed -eq 0 -and $finalSummary.Skipped -eq 0) {
+        Write-Status -Level Success "Hardening completed successfully! All $($finalSummary.Total) operation(s) completed without errors." -LogMessage "=== Hardening completed successfully ===" -State $State
+    } elseif ($finalSummary.Failed -eq 0) {
+        Write-Status -Level Warning "Hardening completed with warnings! All operations completed, but $($finalSummary.Skipped) operation(s) were skipped (see details above)." -LogMessage "=== Hardening completed with warnings ===" -State $State
     } else {
-        Write-Status -Level Error "Hardening completed with errors - review the summary above. Failed Operations: $($script:OperationResults.Failed)" -LogMessage "=== Hardening completed with errors ==="
+        Write-Status -Level Error "Hardening completed with errors - review the summary above. Failed Operations: $($finalSummary.Failed)" -LogMessage "=== Hardening completed with errors ===" -State $State
     }
     Write-Host ("=" * 60) -ForegroundColor Cyan
+    Flush-HardeningLog -State $State
 }

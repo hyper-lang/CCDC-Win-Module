@@ -1,11 +1,15 @@
-function Remove-RDPUsers {
+﻿function Remove-RDPUsers {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Remove RDP Users" -ScriptBlock {
-        Write-Status "Removing all users from Remote Desktop Users group"
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Remove RDP Users" -ScriptBlock {
+        Write-Status "Removing all users from Remote Desktop Users group" -State $State
         $ExclusionList = @("ccdcuser1", "ccdcuser2")
-        $isDC = $script:HardeningContext.OS.IsDomainController
+        $isDC = $State.Context.OS.IsDomainController
 
         try {
             if ($isDC) {
@@ -15,7 +19,7 @@ function Remove-RDPUsers {
             }
 
             if ($null -eq $rdpGroupMembers -or $rdpGroupMembers.Count -eq 0) {
-                Write-Status "Remote Desktop Users group is already empty"
+                Write-Status "Remote Desktop Users group is already empty" -State $State
             } else {
                 $removedCount = 0
                 foreach ($member in $rdpGroupMembers) {
@@ -27,7 +31,7 @@ function Remove-RDPUsers {
                         }
 
                         if ($ExclusionList -contains $username) {
-                            Write-Status -Level Skip "Skipping $username (Protected Account)" -LogMessage "Skipped removal of $username from RDP group"
+                            Write-Status -Level Skip "Skipping $username (Protected Account)" -LogMessage "Skipped removal of $username from RDP group" -State $State
                             continue
                         }
 
@@ -37,19 +41,19 @@ function Remove-RDPUsers {
                             Remove-LocalGroupMember -Group "Remote Desktop Users" -Member $member -Confirm:$false -ErrorAction Stop
                         }
 
-                        Write-Status -Level Success "Removed $username from Remote Desktop Users group"
+                        Write-Status -Level Success "Removed $username from Remote Desktop Users group" -State $State
                         $removedCount++
                     } catch {
                         $displayName = if ($isDC) { $member.SAMAccountName } else { $member.Name }
-                        Write-Status -Level Warning "Could not remove $displayName from Remote Desktop Users group: $($_.Exception.Message)"
+                        Write-Status -Level Warning "Could not remove $displayName from Remote Desktop Users group: $($_.Exception.Message)" -State $State
                     }
                 }
-                Write-Status "Removed $removedCount user(s) from Remote Desktop Users group"
+                Write-Status "Removed $removedCount user(s) from Remote Desktop Users group" -State $State
             }
 
-            Write-Status -Level Success "RDP users removed successfully - Remote Desktop Users group has been reset" -LogMessage "RDP users removal completed - Remote Desktop Users group reset"
+            Write-Status -Level Success "RDP users removed successfully - Remote Desktop Users group has been reset" -LogMessage "RDP users removal completed - Remote Desktop Users group reset" -State $State
         } catch {
-            Write-Status -Level Error "Failed to remove RDP users: $($_.Exception.Message)"
+            Write-Status -Level Error "Failed to remove RDP users: $($_.Exception.Message)" -State $State
             throw
         }
     }

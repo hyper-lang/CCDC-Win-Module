@@ -25,7 +25,11 @@
         [string]$SplunkIP,
 
         [string]$SaltPhrase
+    ,
+        [object]$State = $null
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     # Menu options. Key = what is typed (and what -Selection takes); keys never change, so
     # typed numbers, -Selection, and the README stay valid. Section = the sub-menu an option
@@ -103,56 +107,60 @@
     function Invoke-MenuAction {
         param(
             [string]$Choice
-        )
+        ,
+        [object]$State = $null
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
         # Header from the option's label, also written to the log, so the log shows which
         # menu option ran (not only the operations inside it).
         $option = $menuOptions | Where-Object { $_.Key -eq $Choice.ToUpper() } | Select-Object -First 1
         if ($option) {
-            Write-Banner ("Menu {0}: {1}" -f $option.Key, ($option.Label -replace '\s{2,}', ' ')) -Style Inline -Color Magenta -Log
+            Write-Banner ("Menu {0}: {1}" -f $option.Key, ($option.Label -replace '\s{2,}', ' ')) -Style Inline -Color Magenta -Log -State $State
         }
 
         switch ($Choice.ToUpper()) {
-            '0'  { Show-OperationSummary }
-            'A'  { Initialize-System -Force }
+            '0'  { Show-OperationSummary -State $State }
+            'A'  { Initialize-System -Force -State $State }
 
             # -- Orchestrators ------------------------------------------------
             '1'  {
-                Invoke-WindowsHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase
+                Invoke-WindowsHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -SplunkIP $SplunkIP -SaltPhrase $SaltPhrase -State $State
             }
             '2'  {
-                Invoke-UserHardening -SaltPhrase $SaltPhrase
+                Invoke-UserHardening -SaltPhrase $SaltPhrase -State $State
             }
             '3'  {
-                Invoke-NetworkHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
+                Invoke-NetworkHardening -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -State $State
             }
             '4'  {
-                Invoke-ServiceHardening
+                Invoke-ServiceHardening -State $State
             }
 
             # -- Users & Credentials ------------------------------------------
             '5'  {
-                Set-ZuluPassword -SaltPhrase $SaltPhrase
+                Set-ZuluPassword -SaltPhrase $SaltPhrase -State $State
             }
             '6'  {
-                Set-AdministratorPassword -SaltPhrase $SaltPhrase
+                Set-AdministratorPassword -SaltPhrase $SaltPhrase -State $State
             }
             '7'  {
-                Remove-RDPUsers
+                Remove-RDPUsers -State $State
             }
             '8'  {
-                Add-RDPUsers
+                Add-RDPUsers -State $State
             }
             '9'  {
-                Remove-AdminUsers
+                Remove-AdminUsers -State $State
             }
             '10' {
-                Protect-Mimikatz
+                Protect-Mimikatz -State $State
             }
 
             # -- Network & Remote Access --------------------------------------
             '11' {
-                Set-FirewallConfiguration -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
+                Set-FirewallConfiguration -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -State $State
             }
             '12' {
                 if ($PreserveManagementPort) {
@@ -161,68 +169,68 @@
                     Write-Host "This will disable WinRM, RDP, Remote Registry, and SSH." -ForegroundColor Yellow
                 }
                 Write-Host "If you are connected via RDP or WinRM, your session may end." -ForegroundColor Yellow
-                if ((Read-YesNo -Message "Continue? (y/n) ") -eq 'y') {
-                    Remove-RemoteManagement -SkipWinRM:$PreserveManagementPort
+                if ((Read-YesNo -Message "Continue? (y/n) " -State $State) -eq 'y') {
+                    Remove-RemoteManagement -SkipWinRM:$PreserveManagementPort -State $State
                 } else {
-                    Write-Status -Level Skip "Cancelled"
+                    Write-Status -Level Skip "Cancelled" -State $State
                 }
             }
             '19' {
-                Initialize-System   # loads ports.json so the list shows port descriptions
-                $isDC = $script:HardeningContext.OS.IsDomainController
+                Initialize-System -State $State   # loads ports.json so the list shows port descriptions
+                $isDC = $State.Context.OS.IsDomainController
                 $portInput = if ($AdditionalPorts) { $AdditionalPorts } else {
-                    Read-Choice -Title "Ports to open" -Prompt "Ports" -Options @(Get-FirewallPortOptions) `
+                    Read-Choice -Title "Ports to open" -Prompt "Ports" -Options @(Get-FirewallPortOptions) -State $State `
                         -Multiple -AllowCustom -AllowQuit `
                         -ValidateCustom { param($value) (ConvertTo-PortList -Ports $value)[0] }
                 }
                 if (-not $portInput) {
-                    Write-Status -Level Skip "Cancelled"
+                    Write-Status -Level Skip "Cancelled" -State $State
                     return
                 }
                 $protocol = Read-Choice -Prompt "Protocol" -Default $(if ($isDC) { 'B' } else { 'T' }) -Options @(
                     @{ Key = 'T'; Label = 'TCP'; Value = 'TCP' }
                     @{ Key = 'U'; Label = 'UDP'; Value = 'UDP' }
                     @{ Key = 'B'; Label = 'Both'; Value = 'Both' }
-                )
-                Add-FirewallPort -Ports $portInput -Protocol $protocol
+                ) -State $State
+                Add-FirewallPort -Ports $portInput -Protocol $protocol -State $State
             }
             '20' {
-                Create-CCDCUsers -SaltPhrase $SaltPhrase
+                Create-CCDCUsers -SaltPhrase $SaltPhrase -State $State
             }
 
             # -- Services -----------------------------------------------------
             '13' {
-                Disable-UnusedNetworkProtocols
+                Disable-UnusedNetworkProtocols -State $State
             }
             '14' {
-                Mitigate-EternalBlue
+                Mitigate-EternalBlue -State $State
             }
 
             # -- Monitoring & Patching -----------------------------------------
             '15' {
-                Enable-AdvancedAuditing
+                Enable-AdvancedAuditing -State $State
                 # Also set separately so logging is on even if auditing fails partway.
                 try {
                     Set-NetFirewallProfile -Name Domain,Public,Private -LogAllowed True -LogBlocked True
-                    Write-Status -Level Success "Firewall logging enabled (allowed + blocked)" -LogMessage "Enabled firewall logging"
+                    Write-Status -Level Success "Firewall logging enabled (allowed + blocked)" -LogMessage "Enabled firewall logging" -State $State
                 } catch {
-                    Write-Status -Level Warning "Could not enable firewall logging: $($_.Exception.Message)"
+                    Write-Status -Level Warning "Could not enable firewall logging: $($_.Exception.Message)" -State $State
                 }
             }
             '16' {
-                $ip = if ($SplunkIP) { $SplunkIP } else { Read-HostAddress -Prompt "Splunk server IP" }
+                $ip = if ($SplunkIP) { $SplunkIP } else { Read-HostAddress -Prompt "Splunk server IP" -State $State }
                 # splunk.ps1 detects the Windows version itself.
-                Install-Splunk -IP $ip
+                Install-Splunk -IP $ip -State $State
             }
             '17' {
-                Install-EternalBluePatch
+                Install-EternalBluePatch -State $State
             }
             '18' {
-                Set-RestrictedExecutionPolicy
+                Set-RestrictedExecutionPolicy -State $State
             }
 
             Default {
-                Write-Status -Level Warning "Invalid selection: '$Choice'" -NoLog
+                Write-Status -Level Warning "Invalid selection: '$Choice'" -NoLog -State $State
             }
         }
     }
@@ -234,22 +242,24 @@
 
     if ($Force) {
         if ([string]::IsNullOrEmpty($Selection)) {
-            Write-Status -Level Error "-Force requires -Selection" -NoLog
+            Write-Status -Level Error "-Force requires -Selection" -NoLog -State $State
             return
         }
         try {
-            Invoke-MenuAction -Choice $Selection
+            Invoke-MenuAction -Choice $Selection -State $State
         } catch {
-            Write-Status -Level Error "Menu option $Selection failed: $($_.Exception.Message)"
+            Write-Status -Level Error "Menu option $Selection failed: $($_.Exception.Message)" -State $State
+            Flush-HardeningLog -State $State
         }
+        Flush-HardeningLog -State $State
         return
     }
 
     while ($true) {
-        Write-Banner "Windows Hardening Menu" -Style Inline -Color Green
+        Write-Banner "Windows Hardening Menu" -Style Inline -Color Green -State $State
         Write-Host "Setup runs automatically on the first task; (A) re-runs it (new log file)." -ForegroundColor Yellow
         $picked = Read-Choice -Prompt "Selection" -Options (Get-ScreenOptions) -Multiple -AllowQuit -QuitLabel 'Quit' `
-            -Hint 'a letter opens a section; option numbers work here too, e.g. 9,10,13 or 13-15'
+            -Hint 'a letter opens a section; option numbers work here too, e.g. 9,10,13 or 13-15' -State $State
         if ($null -eq $picked) { break }
 
         # Section letters open a sub-menu (Q there goes back); numbers run directly.
@@ -258,7 +268,7 @@
             if ("$item" -like 'section:*') {
                 $letter = "$item".Substring(8)
                 $sub = Read-Choice -Title $menuSections[$letter] -Prompt "Selection" -Options (Get-ScreenOptions -Section $letter) `
-                    -Multiple -AllowQuit -QuitLabel 'Back' -Hint 'one or more, e.g. 9,10; any option number works here'
+                    -Multiple -AllowQuit -QuitLabel 'Back' -Hint 'one or more, e.g. 9,10; any option number works here' -State $State
                 if ($null -ne $sub) { $sub }
             } else {
                 $item
@@ -268,13 +278,16 @@
 
         foreach ($choice in $choices) {
             try {
-                Invoke-MenuAction -Choice $choice
+                Invoke-MenuAction -Choice $choice -State $State
             } catch {
-                Write-Status -Level Error "Menu option $choice failed: $($_.Exception.Message)"
+                Write-Status -Level Error "Menu option $choice failed: $($_.Exception.Message)" -State $State
+                Flush-HardeningLog -State $State
             }
         }
+        Flush-HardeningLog -State $State
 
         Write-Host "`nPress Enter to return to menu..." -ForegroundColor DarkGray
         Read-Host | Out-Null
     }
+    Flush-HardeningLog -State $State
 }

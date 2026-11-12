@@ -13,67 +13,82 @@ function Invoke-HardeningOperation {
 
         [string[]]$OSCompatibility = @(),
 
+        [object]$State = $null,
+
+        [string]$StepLabel,
+
         [string]$ProgressMessage = "",
 
         [string[]]$TargetComputerName = @()
     )
 
-    # Step label (e.g. "Users 2/6") set by the calling orchestrator via
-    # $script:NextStepLabel, for this operation only. Taken before Initialize-System,
-    # whose own "Initialize Context" operation must not pick it up.
-    $stepLabel = $script:NextStepLabel
-    $script:NextStepLabel = $null
+    # StepLabel belongs to this operation call so it cannot be overwritten by
+    # another operation using the same run state.
+    if (-not $State) {
+        $State = Resolve-HardeningState -State $State
+    }
+    Initialize-System -State $State
+    $stepLabel = $StepLabel
 
-    Initialize-System
-
-    $script:OperationResults.Total++
+    Update-HardeningCounter -State $State -Counter Total
+    $operationStartedAt = [datetime]::UtcNow
     $header = if ($stepLabel) { "[$stepLabel] $OperationName" } else { "[EXECUTING] $OperationName..." }
 
     # Check OS compatibility
     if ($OSCompatibility.Count -gt 0) {
-        if ($script:HardeningContext.OS.OSFamily -notin $OSCompatibility) {
-            $message = "Operation '$OperationName' is not compatible with $($script:HardeningContext.OS.OSVersion) (OS Family: $($script:HardeningContext.OS.OSFamily))"
+        if ($State.Context.OS.OSFamily -notin $OSCompatibility) {
+            $message = "Operation '$OperationName' is not compatible with $($State.Context.OS.OSVersion) (OS Family: $($State.Context.OS.OSFamily))"
             Write-Host "`n$header" -ForegroundColor Cyan
-            Write-Status -Level Skip $message
-            $script:OperationResults.Skipped++
-            $script:OperationResults.Warnings += "[SKIPPED] $message"
-            Set-OperationStatus $OperationName "Skipped - OS incompatible ($($script:HardeningContext.OS.OSFamily))"
+            Write-Status -Level Skip $message -State $State
+            Update-HardeningCounter -State $State -Counter Skipped
+            Add-HardeningWarning -State $State -Warning "[SKIPPED] $message"
+            Set-OperationStatus $OperationName "Skipped - OS incompatible ($($State.Context.OS.OSFamily))" -State $State
+            $State.Results.Enqueue([pscustomobject]@{ Operation = $OperationName; Status = 'Skipped'; Message = $message; StartedAt = $operationStartedAt; EndedAt = [datetime]::UtcNow })
+            Flush-HardeningLog -State $State
             return
         }
     }
 
     try {
         Write-Host "`n$header" -ForegroundColor Cyan
-        Write-Status -LogOnly "Starting operation: $OperationName$(if ($stepLabel) { " ($stepLabel)" })"
+        Write-Status -LogOnly "Starting operation: $OperationName$(if ($stepLabel) { " ($stepLabel)" })" -State $State
         if ($ProgressMessage) {
-            Write-Status $ProgressMessage
+            Write-Status $ProgressMessage -State $State
         }
         if ($TargetComputerName.Count -gt 0) {
-            Write-Status "Applying configuration for $($TargetComputerName -join ', ')..." -NoLog
-        } elseif ($script:HardeningContext.OS) {
-            Write-Status "Applying configuration for $($script:HardeningContext.OS.OSVersion)..." -NoLog
+            Write-Status "Applying configuration for $($TargetComputerName -join ', ')..." -NoLog -State $State
+        } elseif ($State.Context.OS) {
+            Write-Status "Applying configuration for $($State.Context.OS.OSVersion)..." -NoLog -State $State
         }
 
         & $ScriptBlock
 
-        Write-Status -Level Success "$OperationName completed successfully"
-        $script:OperationResults.Successful++
-        Set-OperationStatus $OperationName "Executed successfully"
+        Write-Status -Level Success "$OperationName completed successfully" -State $State
+        Update-HardeningCounter -State $State -Counter Successful
+        Set-OperationStatus $OperationName "Executed successfully" -State $State
+        $State.Results.Enqueue([pscustomobject]@{ Operation = $OperationName; Status = 'Succeeded'; Message = ''; StartedAt = $operationStartedAt; EndedAt = [datetime]::UtcNow })
 
     } catch [System.OperationCanceledException] {
         # A step throws OperationCanceledException when the user backs out of it (e.g. Q at
         # a prompt): that is a skip, not a failure.
-        Write-Status -Level Skip "$OperationName : $($_.Exception.Message)"
-        $script:OperationResults.Skipped++
-        Set-OperationStatus $OperationName "Skipped - $($_.Exception.Message)"
+        Write-Status -Level Skip "$OperationName : $($_.Exception.Message)" -State $State
+        Update-HardeningCounter -State $State -Counter Skipped
+        Set-OperationStatus $OperationName "Skipped - $($_.Exception.Message)" -State $State
+        $State.Results.Enqueue([pscustomobject]@{ Operation = $OperationName; Status = 'Skipped'; Message = $_.Exception.Message; StartedAt = $operationStartedAt; EndedAt = [datetime]::UtcNow })
     } catch {
-        Write-Status -Level Error "$OperationName : $($_.Exception.Message)"
-        Write-Status -Level Error -Tag 'ERROR DETAILS' "Exception Type: $($_.Exception.GetType().FullName)"
+        Write-Status -Level Error "$OperationName : $($_.Exception.Message)" -State $State
+        Write-Status -Level Error -Tag 'ERROR DETAILS' "Exception Type: $($_.Exception.GetType().FullName)" -State $State
         if ($_.Exception.InnerException) {
-            Write-Status -Level Error -Tag 'ERROR DETAILS' "Inner Exception: $($_.Exception.InnerException.Message)"
+            Write-Status -Level Error -Tag 'ERROR DETAILS' "Inner Exception: $($_.Exception.InnerException.Message)" -State $State
         }
 
-        $script:OperationResults.Failed++
-        Set-OperationStatus $OperationName "Failed with error: $($_.Exception.Message)"
+        Update-HardeningCounter -State $State -Counter Failed
+        Set-OperationStatus $OperationName "Failed with error: $($_.Exception.Message)" -State $State
+        $State.Results.Enqueue([pscustomobject]@{ Operation = $OperationName; Status = 'Failed'; Message = $_.Exception.Message; StartedAt = $operationStartedAt; EndedAt = [datetime]::UtcNow })
     }
+
+    # The operation wrapper is the caller/coordinator for its nested functions:
+    # drain their events only after the operation has returned. Flush is serialized
+    # per state, so simultaneous wrappers cannot append to the same file at once.
+    Flush-HardeningLog -State $State
 }

@@ -9,6 +9,7 @@ function Get-HardeningContext {
         log path, etc.; DC status is OS.IsDomainController) as populated by Initialize-System / Initialize-Context.
     #>
     [CmdletBinding()]
-    param()
-    [PSCustomObject]$script:HardeningContext.Clone()
+    param([object]$State = $null)
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+    [PSCustomObject]$State.Context.Clone()
 }

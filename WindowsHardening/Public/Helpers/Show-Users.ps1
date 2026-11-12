@@ -4,15 +4,16 @@
 
 function Show-Users {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null)
 
-    Initialize-System
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+    Initialize-System -State $State
 
     try {
         $output = @()
-        $isDC = $script:HardeningContext.OS.IsDomainController
+        $isDC = $State.Context.OS.IsDomainController
 
-        Write-Banner "Enabled Users" -Style Inline -Color Green
+        Write-Banner "Enabled Users" -Style Inline -Color Green -State $State
         $enabledUsersOutput = "==== Enabled Users ===="
 
         if ($isDC) {
@@ -50,7 +51,7 @@ function Show-Users {
         }
         $output += $enabledUsersOutput
 
-        Write-Banner "Disabled Users" -Style Inline -Color Red
+        Write-Banner "Disabled Users" -Style Inline -Color Red -State $State
         $disabledUsersOutput = "==== Disabled Users ===="
 
         if ($isDC) {
@@ -88,9 +89,11 @@ function Show-Users {
         }
         $output += $disabledUsersOutput
 
+        Flush-HardeningLog -State $State
         return $output
     } catch {
-        Write-Status -Level Error "Error in Show-Users: $($_.Exception.Message)"
+        Write-Status -Level Error "Error in Show-Users: $($_.Exception.Message)" -State $State
+        Flush-HardeningLog -State $State
         return $null
     }
 }

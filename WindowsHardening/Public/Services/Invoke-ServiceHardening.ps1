@@ -34,28 +34,32 @@
 
         [Alias('SkipNetworkServices')]
         [switch]$SkipNetworkProtocols
+    ,
+        [object]$State = $null
     )
 
-    Write-Banner "Service Hardening"
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+    Initialize-System -State $State
+
+    Write-Banner "Service Hardening" -State $State
 
     # Step 1: SMB hardening
     if (-not $SkipEternalBlueMitigation) {
-        $script:NextStepLabel = 'Services 1/2'
-        Mitigate-EternalBlue
+        Mitigate-EternalBlue -State $State -StepLabel 'Services 1/2'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Services 1/2' "SKIPPED - EternalBlue mitigation (-SkipEternalBlueMitigation)" -LogMessage "Invoke-ServiceHardening: EternalBlue mitigation skipped"
+        Write-Status -Level Skip -Tag 'Services 1/2' "SKIPPED - EternalBlue mitigation (-SkipEternalBlueMitigation)" -LogMessage "Invoke-ServiceHardening: EternalBlue mitigation skipped" -State $State
     }
 
     # Step 2: Disable unused network protocols (IPv6, NetBIOS)
     if (-not $SkipNetworkProtocols) {
-        $script:NextStepLabel = 'Services 2/2'
-        Disable-UnusedNetworkProtocols
+        Disable-UnusedNetworkProtocols -State $State -StepLabel 'Services 2/2'
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Services 2/2' "SKIPPED - unused network protocols (-SkipNetworkProtocols)" -LogMessage "Invoke-ServiceHardening: Disable-UnusedNetworkProtocols skipped"
+        Write-Status -Level Skip -Tag 'Services 2/2' "SKIPPED - unused network protocols (-SkipNetworkProtocols)" -LogMessage "Invoke-ServiceHardening: Disable-UnusedNetworkProtocols skipped" -State $State
     }
 
     Write-Host ""
-    Write-Status -Tag Services "Done." -LogMessage "Invoke-ServiceHardening completed"
+    Write-Status -Tag Services "Done." -LogMessage "Invoke-ServiceHardening completed" -State $State
+    Flush-HardeningLog -State $State
 }

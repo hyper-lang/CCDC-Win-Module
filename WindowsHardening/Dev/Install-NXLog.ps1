@@ -30,10 +30,14 @@ function Install-NXLog {
 
         [string]$InstallerPath,
 
-        [string]$InstallerUrl
+        [string]$InstallerUrl,
+
+        [object]$State = $null
     )
 
-    Invoke-HardeningOperation -OperationName 'Install NXLog' -ProgressMessage 'Installing and configuring NXLog for Graylog' -ScriptBlock {
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
+    Invoke-HardeningOperation -State $State -OperationName 'Install NXLog' -ProgressMessage 'Installing and configuring NXLog for Graylog' -ScriptBlock {
         $server = $GraylogServer.Trim()
         if (-not (Test-HostAddress $server)) {
             throw "Invalid -GraylogServer '$GraylogServer': use an IP address or host name"
@@ -98,12 +102,12 @@ function Install-NXLog {
             }
         }
 
-        Write-Status "Installing NXLog from $msi"
+        Write-Status "Installing NXLog from $msi" -State $State
         $msiLog = Join-Path $env:TEMP 'nxlog-install.log'
         $installerArgs = @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$msiLog`"")
         $install = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $installerArgs -Wait -PassThru
         if ($install.ExitCode -eq 1603) {
-            Write-Status -Level Warning "NXLog returned MSI error 1603 on the first attempt; retrying once. See $msiLog for details."
+            Write-Status -Level Warning "NXLog returned MSI error 1603 on the first attempt; retrying once. See $msiLog for details." -State $State
             $install = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $installerArgs -Wait -PassThru
         }
         if ($install.ExitCode -notin @(0,3010,1641)) {
@@ -161,6 +165,6 @@ LogLevel INFO
         if ($service.Status -eq 'Running') { Restart-Service -Name $service.Name -Force -ErrorAction Stop }
         else { Start-Service -Name $service.Name -ErrorAction Stop }
 
-        Write-Status -Level Success "NXLog is forwarding Windows Event Logs to ${server}:$Port over GELF/$Transport. Previous config: $backup"
+        Write-Status -Level Success "NXLog is forwarding Windows Event Logs to ${server}:$Port over GELF/$Transport. Previous config: $backup" -State $State
     }
 }

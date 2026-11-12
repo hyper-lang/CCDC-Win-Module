@@ -1,4 +1,4 @@
-function Set-ZuluPassword {
+﻿function Set-ZuluPassword {
     [CmdletBinding()]
     param(
         [Alias("h")][switch]$Help,
@@ -14,7 +14,13 @@ function Set-ZuluPassword {
 
         # Where zulu.log and users_zulu.csv are written. Default: the module's log directory.
         [string]$OutputDirectory
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     process {
         if ($Help) {
@@ -44,8 +50,8 @@ function Set-ZuluPassword {
             if (-not $OutputDirectory) {
                 $OutputDirectory = if ($writeLinuxGenerateCsv) {
                     (Get-Location).Path
-                } elseif ($script:HardeningContext.LogPath) {
-                    $script:HardeningContext.LogPath
+                } elseif ($State.Context.LogPath) {
+                    $State.Context.LogPath
                 } else {
                     $script:DefaultLogPath
                 }
@@ -60,18 +66,18 @@ function Set-ZuluPassword {
             $WordlistFile = [System.IO.Path]::Combine($script:DataPath, "wordlist.txt")
             $ExcludedUsers = @("Administrator", "ccdcuser1", "ccdcuser2", "ccdcuser3")
 
-            Write-Status "Starting Zulu password generator"
+            Write-Status "Starting Zulu password generator" -State $State
             Write-ZuluLog -Message "Script started at $(Get-Date)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
-            Write-Status "Users excluded from rotation: $($ExcludedUsers -join ', ')"
+            Write-Status "Users excluded from rotation: $($ExcludedUsers -join ', ')" -State $State
 
             # Generating passwords needs no admin rights; changing them does.
             if (-not $GenerateOnly) {
-                Test-Prerequisites
+                Test-Prerequisites -State $State
             }
 
-            $IsDomainController = (Get-OperatingSystemInfo).IsDomainController
+            $IsDomainController = (Get-OperatingSystemInfo -State $State).IsDomainController
             if ($IsDomainController) {
-                Write-Status "Domain Controller detected - AD password operations will be used"
+                Write-Status "Domain Controller detected - AD password operations will be used" -State $State
             }
 
 
@@ -87,11 +93,11 @@ function Set-ZuluPassword {
                     $confirmSeedPhrase = Read-SecretInput "Confirm seed phrase: "
 
                     if ($seedPhrase -ne $confirmSeedPhrase) {
-                        Write-Status -Level Warning "Seed phrases do not match. Please retry." -NoLog
+                        Write-Status -Level Warning "Seed phrases do not match. Please retry." -NoLog -State $State
                         continue
                     }
                     if ($seedPhrase.Length -lt 8) {
-                        Write-Status -Level Warning "Seed phrase must be at least 8 characters long. Please retry." -NoLog
+                        Write-Status -Level Warning "Seed phrase must be at least 8 characters long. Please retry." -NoLog -State $State
                         continue
                     }
                     break
@@ -99,8 +105,8 @@ function Set-ZuluPassword {
             }
 
             if (-not (Test-Path $WordlistFile)) {
-                Write-Status "Downloading wordlist from $WordlistUrl"
-                if (-not (Get-FileFromUrl -Url $WordlistUrl -OutputPath $WordlistFile)) {
+                Write-Status "Downloading wordlist from $WordlistUrl" -State $State
+                if (-not (Get-FileFromUrl -Url $WordlistUrl -OutputPath $WordlistFile -State $State)) {
                     throw "Failed to download wordlist from $WordlistUrl"
                 }
             }
@@ -120,7 +126,7 @@ function Set-ZuluPassword {
 
             $users = $rawUsers | Where-Object { $_ -notin $ExcludedUsers }
 
-            Write-Status "Generating passwords for $(@($users).Count) user(s)"
+            Write-Status "Generating passwords for $(@($users).Count) user(s)" -State $State
 
             $failedUsers = 0
             $generatedRows = @()
@@ -144,18 +150,18 @@ function Set-ZuluPassword {
 
                 if (-not $GenerateOnly) {
                     try {
-                        Set-UserPassword -Username $username -Password $password
+                        Set-UserPassword -Username $username -Password $password -State $State
                         if ($IsDomainController) {
-                            Write-Status -Level Success "Changed AD password for ${username}"
+                            Write-Status -Level Success "Changed AD password for ${username}" -State $State
                             Write-ZuluLog -Message "Successfully changed AD password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
                         } else {
-                            Write-Status -Level Success "Changed password for ${username}"
+                            Write-Status -Level Success "Changed password for ${username}" -State $State
                             Write-ZuluLog -Message "Successfully changed password for ${username}." -LogFile $LogFile -GenerateOnly:$GenerateOnly
                         }
                         Add-Content -Path $ExportUsersFile -Value $username
                     } catch {
                         $failedUsers++
-                        Write-Status -Level Error "Failed to change password for ${username}: $($_.Exception.Message)"
+                        Write-Status -Level Error "Failed to change password for ${username}: $($_.Exception.Message)" -State $State
                         Write-ZuluLog -Message "Failed to change password for ${username}.: $($_.Exception.Message)" -LogFile $LogFile -GenerateOnly:$GenerateOnly
                     }
                 } else {
@@ -174,15 +180,15 @@ function Set-ZuluPassword {
                 } else {
                     $csvHeader | Set-Content -LiteralPath $ExportUsersFile -Encoding UTF8 -Force
                 }
-                Write-Status "Generated password CSV: $ExportUsersFile" -LogMessage "Generated password CSV at $ExportUsersFile"
+                Write-Status "Generated password CSV: $ExportUsersFile" -LogMessage "Generated password CSV at $ExportUsersFile" -State $State
             }
 
             if ($GenerateOnly) {
-                Set-OperationStatus "Change Passwords" "Generated only (no changes)"
+                Set-OperationStatus "Change Passwords" "Generated only (no changes)" -State $State
             } elseif ($failedUsers -gt 0) {
-                Set-OperationStatus "Change Passwords" "Failed for $failedUsers of $(@($users).Count) user(s)"
+                Set-OperationStatus "Change Passwords" "Failed for $failedUsers of $(@($users).Count) user(s)" -State $State
             } else {
-                Set-OperationStatus "Change Passwords" "Executed successfully"
+                Set-OperationStatus "Change Passwords" "Executed successfully" -State $State
             }
 
             Write-Host "`nDone!" -ForegroundColor Green
@@ -196,7 +202,7 @@ function Set-ZuluPassword {
         if ($GenerateOnly) {
             & $zulu
         } else {
-            Invoke-HardeningOperation -OperationName "Zulu Passwords" -ScriptBlock $zulu
+            Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Zulu Passwords" -ScriptBlock $zulu
         }
     }
 }

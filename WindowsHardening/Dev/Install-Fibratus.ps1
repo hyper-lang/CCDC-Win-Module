@@ -44,10 +44,14 @@ function Install-Fibratus {
         [string]$StreamPath = (Join-Path $env:ProgramFiles 'Fibratus\Logs\fibratus-stream.json'),
 
         [ValidatePattern('^v?\d+\.\d+\.\d+$')]
-        [string]$FibratusVersion
+        [string]$FibratusVersion,
+
+        [object]$State = $null
     )
 
-    Invoke-HardeningOperation -OperationName 'Install Fibratus' -ProgressMessage "Installing Fibratus ($ForwardingMode forwarding)" -ScriptBlock {
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
+    Invoke-HardeningOperation -State $State -OperationName 'Install Fibratus' -ProgressMessage "Installing Fibratus ($ForwardingMode forwarding)" -ScriptBlock {
         if ($ForwardingMode -eq 'Splunk') {
             if (-not $SplunkHecUrl -or -not $SplunkHecToken) {
                 throw "Splunk mode requires -SplunkHecUrl and -SplunkHecToken (use a Splunk HEC raw endpoint and token)."
@@ -56,7 +60,7 @@ function Install-Fibratus {
             if (-not [Uri]::TryCreate($SplunkHecUrl, [UriKind]::Absolute, [ref]$uri) -or $uri.Scheme -notin @('https','http')) {
                 throw "Invalid -SplunkHecUrl '$SplunkHecUrl': provide an absolute HTTP or HTTPS URL."
             }
-            if ($uri.Scheme -ne 'https') { Write-Status -Level Warning 'Splunk HEC URL uses HTTP; the HEC token and events will not be encrypted in transit.' }
+            if ($uri.Scheme -ne 'https') { Write-Status -Level Warning 'Splunk HEC URL uses HTTP; the HEC token and events will not be encrypted in transit.' -State $State }
         }
         if ($ForwardingMode -eq 'NXLog') {
             if (-not $NXLogServer -or -not (Test-HostAddress $NXLogServer.Trim())) {
@@ -71,17 +75,17 @@ function Install-Fibratus {
         $stderrPath = Join-Path $streamDir 'fibratus-errors.log'
 
         $bootstrapPath = Join-Path $env:TEMP 'install-fibratus.ps1'
-        $osVersion = $script:HardeningContext.OS.OSVersion
+        $osVersion = $State.Context.OS.OSVersion
         $selectedVersion = $FibratusVersion
         if (-not $selectedVersion -and $osVersion -match '^Windows Server (2016|2019)$') {
             $selectedVersion = 'v2.4.0'
-            Write-Status -Level Warning "Using Fibratus $selectedVersion on $osVersion to avoid a process-integrity panic in v3.1.1. Pass -FibratusVersion to override."
+        Write-Status -Level Warning "Using Fibratus $selectedVersion on $osVersion to avoid a process-integrity panic in v3.1.1. Pass -FibratusVersion to override." -State $State
         }
         if ($selectedVersion -and $selectedVersion -notmatch '^v') { $selectedVersion = "v$selectedVersion" }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri 'https://install.fibratus.io' -OutFile $bootstrapPath -UseBasicParsing -ErrorAction Stop
-            Write-Status 'Downloaded the official Fibratus installer'
+            Write-Status 'Downloaded the official Fibratus installer' -State $State
             if ($selectedVersion) { & $bootstrapPath -Version $selectedVersion -Force }
             else { & $bootstrapPath -Force }
             if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw "Fibratus installer exited with code $LASTEXITCODE" }
@@ -102,7 +106,7 @@ function Install-Fibratus {
         if (Test-Path -LiteralPath $configPath) {
             $backup = "$configPath.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
             Copy-Item -LiteralPath $configPath -Destination $backup -Force
-            Write-Status "Backed up the existing Fibratus configuration to $backup"
+            Write-Status "Backed up the existing Fibratus configuration to $backup" -State $State
         }
 
         if ($ForwardingMode -eq 'Splunk') {
@@ -201,16 +205,16 @@ sourcetype = _json
                     try {
                         if ($ufService.Status -eq 'Running') { Restart-Service -Name $ufService.Name -Force -ErrorAction Stop }
                         else { Start-Service -Name $ufService.Name -ErrorAction Stop }
-                    } catch { Write-Status -Level Warning "The forwarder input was written, but SplunkForwarder could not be restarted: $($_.Exception.Message)" }
+                    } catch { Write-Status -Level Warning "The forwarder input was written, but SplunkForwarder could not be restarted: $($_.Exception.Message)" -State $State }
                 } else {
-                    Write-Status -Level Warning 'Universal Forwarder files were found, but its SplunkForwarder service was not found; restart the forwarder to load the new input.'
+                    Write-Status -Level Warning 'Universal Forwarder files were found, but its SplunkForwarder service was not found; restart the forwarder to load the new input.' -State $State
                 }
-                Write-Status -Level Success "Fibratus is writing JSON events to $streamFullPath; the Universal Forwarder input is configured in $inputsPath (index $SplunkIndex, sourcetype _json)."
+                Write-Status -Level Success "Fibratus is writing JSON events to $streamFullPath; the Universal Forwarder input is configured in $inputsPath (index $SplunkIndex, sourcetype _json)." -State $State
             } else {
-                Write-Status -Level Warning "Fibratus is writing JSON events to $streamFullPath, but Splunk Universal Forwarder was not found. Configure it to monitor this file with index $SplunkIndex and sourcetype _json."
+                Write-Status -Level Warning "Fibratus is writing JSON events to $streamFullPath, but Splunk Universal Forwarder was not found. Configure it to monitor this file with index $SplunkIndex and sourcetype _json." -State $State
             }
         } elseif ($ForwardingMode -eq 'Splunk') {
-            Write-Status -Level Success "Fibratus HTTP output is configured for Splunk HEC at $SplunkHecUrl."
+            Write-Status -Level Success "Fibratus HTTP output is configured for Splunk HEC at $SplunkHecUrl." -State $State
         } else {
             $nxlogRoot = Join-Path $env:ProgramFiles 'nxlog'
             if (-not (Test-Path -LiteralPath $nxlogRoot) -and ${env:ProgramFiles(x86)}) {
@@ -254,7 +258,7 @@ sourcetype = _json
             if (-not $nxlogSvc) { throw 'NXLog config fragment was written, but the NXLog service was not found.' }
             if ($nxlogSvc.Status -eq 'Running') { Restart-Service -Name $nxlogSvc.Name -Force -ErrorAction Stop }
             else { Start-Service -Name $nxlogSvc.Name -ErrorAction Stop }
-            Write-Status -Level Success "Fibratus JSON events at $streamFullPath are configured for NXLog -> ${NXLogServer}:$NXLogPort over GELF/$NXLogTransport."
+            Write-Status -Level Success "Fibratus JSON events at $streamFullPath are configured for NXLog -> ${NXLogServer}:$NXLogPort over GELF/$NXLogTransport." -State $State
         }
 
         # ETW initialization and the first emitted event can take several seconds on

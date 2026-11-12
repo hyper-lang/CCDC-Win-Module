@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 function Mitigate-ZeroLogon {
     <#
@@ -12,9 +12,11 @@ function Mitigate-ZeroLogon {
         TCP with its remote address limited to LocalSubnet (IPv4 and IPv6).
     #>
     [CmdletBinding()]
-    param()
+    param([object]$State = $null, [string]$StepLabel)
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Mitigate ZeroLogon" -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Mitigate ZeroLogon" -ScriptBlock {
         $rules = @(Get-NetFirewallRule -Direction Inbound -Action Allow -ErrorAction Stop)
         $rpcRules = @(
             foreach ($rule in $rules) {
@@ -36,7 +38,7 @@ function Mitigate-ZeroLogon {
         )
 
         if ($rpcRules.Count -eq 0) {
-            Write-Status -Level Success "No inbound allow rules for TCP RPC were found" -LogOnly
+            Write-Status -Level Success "No inbound allow rules for TCP RPC were found" -LogOnly -State $State
             return
         }
 
@@ -106,7 +108,7 @@ function Mitigate-ZeroLogon {
             $null = New-NetFirewallRule @rpcParameters -ErrorAction Stop
 
             $rule | Remove-NetFirewallRule -ErrorAction Stop
-            Write-Status -Level Success "Restricted RPC allow rule '$($rule.DisplayName)' to the local subnet"
+            Write-Status -Level Success "Restricted RPC allow rule '$($rule.DisplayName)' to the local subnet" -State $State
         }
     }
 }

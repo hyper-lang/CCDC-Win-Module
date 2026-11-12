@@ -8,7 +8,9 @@ function Read-YesNo {
         [Parameter(Mandatory=$true)]
         [string]$Message,
 
-        [switch]$Force
+        [switch]$Force,
+
+        [object]$State = $null
     )
 
     try {
@@ -26,7 +28,7 @@ function Read-YesNo {
             }
         } while ($true)
     } catch {
-        Write-Status -Level Error "Error in Read-YesNo: $($_.Exception.Message)"
+        Write-Status -Level Error "Error in Read-YesNo: $($_.Exception.Message)" -State $State
         return "n"
     }
 }
@@ -41,10 +43,12 @@ function Read-HostAddress {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [string]$Prompt
+        [string]$Prompt,
+
+        [object]$State = $null
     )
 
-    Read-Choice -Prompt $Prompt -AllowCustom -ValidateCustom {
+    Read-Choice -Prompt $Prompt -AllowCustom -State $State -ValidateCustom {
         param($value)
         if (-not (Test-HostAddress $value)) { throw "not a valid IP address or host name" }
         $value

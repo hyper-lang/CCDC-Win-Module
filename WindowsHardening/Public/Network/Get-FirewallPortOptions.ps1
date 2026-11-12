@@ -29,7 +29,7 @@ function Get-FirewallPortOptions {
         if ($port -in $adPorts) { $tags += 'AD' }
         @{
             Key     = "$port"
-            Label   = "{0,-24} [{1}]" -f (Get-FirewallPortDescription -Port $port), ($tags -join ', ')
+            Label   = "{0,-24} [{1}]" -f (Get-FirewallPortDescription -Port $port -State $State), ($tags -join ', ')
             Value   = $port
             Default = [bool]($IsDC -and $port -in $adPorts)
         }

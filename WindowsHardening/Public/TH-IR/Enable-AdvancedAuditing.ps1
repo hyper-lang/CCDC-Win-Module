@@ -1,4 +1,4 @@
-function Enable-AdvancedAuditing {
+﻿function Enable-AdvancedAuditing {
     <#
     .SYNOPSIS
         Enables auditing for logon, account, object, policy, privilege, and process
@@ -9,9 +9,11 @@ function Enable-AdvancedAuditing {
         4.7+ features first if missing (Windows Server only).
     #>
     [CmdletBinding()]
-    param()
+    param([object]$State = $null, [string]$StepLabel)
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Enable Advanced Auditing" -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Enable Advanced Auditing" -ScriptBlock {
         # Check if .NET Framework 4.7 or later is installed
         if ((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -ErrorAction SilentlyContinue).Release -ge 461808) {
             Write-Host ".NET Framework 4.7 or later is already installed."

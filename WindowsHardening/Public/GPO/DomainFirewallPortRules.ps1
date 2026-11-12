@@ -1,4 +1,4 @@
-function Add-DomainFirewallPortRule {
+﻿function Add-DomainFirewallPortRule {
     <#
     .SYNOPSIS
         Adds or updates a named firewall allow rule in a computer-targeted domain GPO.
@@ -20,7 +20,12 @@ function Add-DomainFirewallPortRule {
         [ValidateSet('TCP','UDP')][string]$Protocol = 'TCP',
         [ValidateSet('Inbound','Outbound')][string]$Direction = 'Inbound',
         [string[]]$RemoteAddress = @('Any')
+    ,
+        [object]$State = $null,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     if (-not $ComputerName -or @($ComputerName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) {
         throw 'Specify at least one computer account in -ComputerName.'
@@ -28,7 +33,7 @@ function Add-DomainFirewallPortRule {
     $gpoName = "CCDC Port Rule - $Name"
     $ruleName = 'CCDC-Port-' + ($Name -replace '[^A-Za-z0-9_.-]', '-')
     if ($PSCmdlet.ShouldProcess("$($ComputerName -join ', ') / $gpoName", "Add $Direction $Protocol port(s) $($Port -join ',')")) {
-      Invoke-HardeningOperation -OperationName "Add Domain Firewall Port Rule '$Name'" -TargetComputerName $ComputerName -ScriptBlock {
+      Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Add Domain Firewall Port Rule '$Name'" -TargetComputerName $ComputerName -ScriptBlock {
         foreach ($moduleName in @('ActiveDirectory', 'GroupPolicy', 'NetSecurity')) {
             if (-not (Get-Module -Name $moduleName)) { Import-Module $moduleName -ErrorAction Stop }
         }
@@ -64,7 +69,7 @@ function Add-DomainFirewallPortRule {
 
         Add-CcdcGpoLink -Name $gpo.DisplayName -Target $target -SecurityFilter $ComputerName
         Write-Status -Level Success "Added '$Name' ($Direction $Protocol $($Port -join ',')) for $($ComputerName -join ', ')" `
-            -LogMessage "Added domain firewall exception '$Name' in '$gpoName' for $($ComputerName -join ', ')"
+            -LogMessage "Added domain firewall exception '$Name' in '$gpoName' for $($ComputerName -join ', ')" -State $State
       }
     }
 }
@@ -77,7 +82,12 @@ function Remove-DomainFirewallPortRule {
     [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
     param(
         [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}$')][string]$Name
+    ,
+        [object]$State = $null,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     $gpoName = "CCDC Port Rule - $Name"
     $ruleName = 'CCDC-Port-' + ($Name -replace '[^A-Za-z0-9_.-]', '-')
@@ -86,12 +96,12 @@ function Remove-DomainFirewallPortRule {
     }
     $gpo = Get-GPO -Name $gpoName -ErrorAction Ignore
     if (-not $gpo) {
-        Write-Status -Level Skip "No domain port rule named '$Name' exists" -LogMessage "No GPO '$gpoName' found to remove"
+        Write-Status -Level Skip "No domain port rule named '$Name' exists" -LogMessage "No GPO '$gpoName' found to remove" -State $State
         return
     }
 
     if ($PSCmdlet.ShouldProcess($gpoName, "Remove port rule '$Name' and its domain link")) {
-        Invoke-HardeningOperation -OperationName "Remove Domain Firewall Port Rule '$Name'" -ScriptBlock {
+        Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Remove Domain Firewall Port Rule '$Name'" -ScriptBlock {
             if (-not (Get-Module -Name NetSecurity)) { Import-Module NetSecurity -ErrorAction Stop }
             $domain = Get-ADDomain -ErrorAction Stop
             $policyStore = "$($domain.DNSRoot)\$gpoName"
@@ -101,7 +111,7 @@ function Remove-DomainFirewallPortRule {
                 Remove-GPLink -Name $gpoName -Target $domain.DistinguishedName -Confirm:$false -ErrorAction Stop | Out-Null
             }
             Remove-GPO -Name $gpoName -ErrorAction Stop
-            Write-Status -Level Success "Removed domain firewall rule '$Name'" -LogMessage "Removed port rule GPO '$gpoName'"
+            Write-Status -Level Success "Removed domain firewall rule '$Name'" -LogMessage "Removed port rule GPO '$gpoName'" -State $State
         }
     }
 }

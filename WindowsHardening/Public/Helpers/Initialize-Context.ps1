@@ -29,9 +29,11 @@ $script:FallbackPorts = @{
 
 function Initialize-Context {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null)
 
-    Invoke-HardeningOperation -OperationName "Initialize Context" -ScriptBlock {
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
+    Invoke-HardeningOperation -State $State -OperationName "Initialize Context" -ScriptBlock {
         # Data files ship in the module's Data folder; download only if one is missing
         if (-not (Test-Path $script:DataPath)) {
             New-Item -Path $script:DataPath -ItemType Directory -Force | Out-Null
@@ -40,14 +42,14 @@ function Initialize-Context {
             $filename = $(Split-Path -Path $file -Leaf)
             $target = Join-Path $script:DataPath $filename
             if (-not (Test-Path $target)) {
-                Write-Status "Downloading $filename (missing from Data\)"
+                Write-Status "Downloading $filename (missing from Data\)" -State $State
                 try {
                     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                     Invoke-WebRequest -Uri "$script:CcdcRepoUrl/$file" -OutFile $target
-                    Write-Status -Level Success "Downloaded $filename" -LogOnly
+                    Write-Status -Level Success "Downloaded $filename" -LogOnly -State $State
                 } catch {
                     # Non-fatal: each consumer checks for its own file (ports.json has a fallback).
-                    Write-Status -Level Warning "Failed to download $filename : $($_.Exception.Message)"
+                    Write-Status -Level Warning "Failed to download $filename : $($_.Exception.Message)" -State $State
                 }
             } else {
                 Write-Verbose "File already exists: $filename"
@@ -57,11 +59,18 @@ function Initialize-Context {
         # Load port data
         $portsFile = Join-Path $script:DataPath 'ports.json'
         if (Test-Path $portsFile) {
-            $script:HardeningContext.Ports = Get-Content -Path $portsFile -Raw | ConvertFrom-Json
-            Write-Status "Loaded ports configuration from ports.json" -LogOnly
+            $State.Context.Ports = Get-Content -Path $portsFile -Raw | ConvertFrom-Json
+            Write-Status "Loaded ports configuration from ports.json" -LogOnly -State $State
         } else {
-            $script:HardeningContext.Ports = $script:FallbackPorts
-            Write-Status -Level Warning "ports.json not found, using fallback port definitions"
+            # The fallback definition is shared module configuration. Copy the
+            # nested hashtables so callers can adjust their run's port metadata
+            # without mutating the defaults or another run state's context.
+            $portsCopy = @{ ports = @{} }
+            foreach ($port in $script:FallbackPorts.ports.GetEnumerator()) {
+                $portsCopy.ports[$port.Key] = @{ description = $port.Value.description }
+            }
+            $State.Context.Ports = $portsCopy
+            Write-Status -Level Warning "ports.json not found, using fallback port definitions" -State $State
         }
 
     }

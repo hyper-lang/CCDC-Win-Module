@@ -48,10 +48,12 @@ function Set-UserPassword {
 
         [string]$SaltPhrase,
 
-        [switch]$AddToAdmins
+        [switch]$AddToAdmins,
+
+        [object]$State = $null
     )
 
-    $isDC = (Get-OperatingSystemInfo).IsDomainController
+    $isDC = (Get-OperatingSystemInfo -State $State).IsDomainController
 
     # Check first: setting a password on a missing account can never succeed.
     $exists = if ($isDC) {
@@ -77,7 +79,7 @@ function Set-UserPassword {
                 throw "No password entered for '$Username'"
             }
             if ($Password -ne (Read-SecretInput "Confirm password: ")) {
-                Write-Status -Level Warning "Passwords do not match. Try again (Enter to give up)."
+                Write-Status -Level Warning "Passwords do not match. Try again (Enter to give up)." -State $State
                 continue
             }
         }
@@ -94,8 +96,8 @@ function Set-UserPassword {
             if (-not $prompted) {
                 throw "Could not set password for '$Username': $($_.Exception.Message)"
             }
-            Write-Status -Level Error "Could not set password for ${Username}: $($_.Exception.Message)"
-            Write-Status -Level Warning "Try a different password (likely complexity requirements), or press Enter to give up."
+            Write-Status -Level Error "Could not set password for ${Username}: $($_.Exception.Message)" -State $State
+            Write-Status -Level Warning "Try a different password (likely complexity requirements), or press Enter to give up." -State $State
         }
     }
 
@@ -109,7 +111,7 @@ function Set-UserPassword {
             }
         } catch {
             if ($_.Exception.Message -notmatch 'already a member|member of the group') {
-                Write-Status -Level Warning "Could not add $Username to the admin group: $($_.Exception.Message)"
+                Write-Status -Level Warning "Could not add $Username to the admin group: $($_.Exception.Message)" -State $State
             }
         }
     }
@@ -125,7 +127,7 @@ function Set-CompetitionDomainControllerGroups {
         administrator membership inherited through Domain Admins.
     #>
     [CmdletBinding()]
-    param()
+    param([object]$State = $null)
 
     $domain = Get-ADDomain -ErrorAction Stop
     $builtinAdministrators = Get-ADGroup -Identity "CN=Administrators,CN=Builtin,$($domain.DistinguishedName)" -ErrorAction Stop
@@ -135,18 +137,20 @@ function Set-CompetitionDomainControllerGroups {
     if ($builtinAdminMembers.DistinguishedName -notcontains $domainAdmins.DistinguishedName) {
         Add-ADGroupMember -Identity $builtinAdministrators -Members $domainAdmins -ErrorAction Stop
         Write-Status -Level Success "Restored Domain Admins membership in BUILTIN\\Administrators" `
-            -LogMessage "Added Domain Admins to BUILTIN\\Administrators"
+            -LogMessage "Added Domain Admins to BUILTIN\\Administrators" -State $State
     } else {
-        Write-Status -Level Skip "Domain Admins is already a member of BUILTIN\\Administrators"
+        Write-Status -Level Skip "Domain Admins is already a member of BUILTIN\\Administrators" -State $State
     }
 }
 
 function Get-CompetitionWordlistData {
+    param([object]$State = $null)
+
     $wordlistFile = Join-Path $script:DataPath 'wordlist.txt'
     if (-not (Test-Path $wordlistFile)) {
         $wordlistUrl = "$script:CcdcRepoUrl/wordlist.txt"
-        Write-Status "Downloading wordlist from $wordlistUrl"
-        if (-not (Get-FileFromUrl -Url $wordlistUrl -OutputPath $wordlistFile)) {
+        Write-Status "Downloading wordlist from $wordlistUrl" -State $State
+        if (-not (Get-FileFromUrl -Url $wordlistUrl -OutputPath $wordlistFile -State $State)) {
             throw "Failed to download wordlist from $wordlistUrl"
         }
     }
@@ -162,16 +166,21 @@ function Set-AdministratorPassword {
         supplied, derives the password from the bundled Zulu wordlist for unattended runs.
     #>
     [CmdletBinding()]
-    param([string]$SaltPhrase)
+    param([string]$SaltPhrase,
+        [object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName 'Change Administrator Password' -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName 'Change Administrator Password' -ScriptBlock {
         $passwordArgs = @{}
         if ($SaltPhrase) {
             if ($SaltPhrase.Length -lt 8) { throw 'Salt phrase must be at least 8 characters long.' }
-            $passwordArgs.WordlistData = Get-CompetitionWordlistData
+            $passwordArgs.WordlistData = Get-CompetitionWordlistData -State $State
             $passwordArgs.SaltPhrase = $SaltPhrase
         }
-        Set-UserPassword -Username 'Administrator' -PasswordPrompt 'Enter new password for Administrator: ' @passwordArgs
+        Set-UserPassword -Username 'Administrator' -PasswordPrompt 'Enter new password for Administrator: ' -State $State @passwordArgs
     }
 }
 
@@ -186,62 +195,67 @@ function Create-CCDCUsers {
         account password is entered directly.
     #>
     [CmdletBinding()]
-    param([string]$SaltPhrase)
+    param([string]$SaltPhrase,
+        [object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName 'Add Competition Users' -ScriptBlock {
-        $isDC = (Get-OperatingSystemInfo).IsDomainController
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName 'Add Competition Users' -ScriptBlock {
+        $isDC = (Get-OperatingSystemInfo -State $State).IsDomainController
         $failed = 0
         $passwordArgs = @{}
         if ($SaltPhrase) {
             if ($SaltPhrase.Length -lt 8) { throw 'Salt phrase must be at least 8 characters long.' }
-            $passwordArgs.WordlistData = Get-CompetitionWordlistData
+            $passwordArgs.WordlistData = Get-CompetitionWordlistData -State $State
             $passwordArgs.SaltPhrase = $SaltPhrase
         }
 
         if ($isDC) {
             # ccdcuser2 (standard) and ccdcuser3 (Domain Admin) in AD; ccdcuser1 is local-only.
-            Write-Status "Setting up domain users ccdcuser2 and ccdcuser3"
+            Write-Status "Setting up domain users ccdcuser2 and ccdcuser3" -State $State
             foreach ($u in @('ccdcuser2', 'ccdcuser3')) {
                 try {
                     if (-not (Get-ADUser -Filter "SamAccountName -eq '$u'")) {
                         New-ADUserAccount -Name $u -SamAccountName $u
                     }
-                    Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq 'ccdcuser3') @passwordArgs
+                    Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq 'ccdcuser3') -State $State @passwordArgs
                     Enable-ADAccount -Identity $u -ErrorAction Stop
-                    Write-Status -Level Success "$u ready"
+                    Write-Status -Level Success "$u ready" -State $State
                 } catch {
                     $failed++
-                    Write-Status -Level Warning "Domain user '$u' not set up: $($_.Exception.Message)" -LogMessage "Domain user '$u' setup failed: $($_.Exception.Message)"
+                    Write-Status -Level Warning "Domain user '$u' not set up: $($_.Exception.Message)" -LogMessage "Domain user '$u' setup failed: $($_.Exception.Message)" -State $State
                 }
             }
 
             try {
-                Set-CompetitionDomainControllerGroups
+                Set-CompetitionDomainControllerGroups -State $State
             } catch {
                 $failed++
                 Write-Status -Level Warning "Could not restore Domain Admins membership in BUILTIN\\Administrators: $($_.Exception.Message)" `
-                    -LogMessage "Domain Admins nesting restore failed: $($_.Exception.Message)"
+                    -LogMessage "Domain Admins nesting restore failed: $($_.Exception.Message)" -State $State
             }
         } else {
-            Write-Status "Setting up local users ccdcuser1 and ccdcuser2"
+            Write-Status "Setting up local users ccdcuser1 and ccdcuser2" -State $State
             foreach ($u in @('ccdcuser1', 'ccdcuser2')) {
                 try {
                     if (-not (Get-LocalUser -Name $u -ErrorAction Ignore)) {
                         New-LocalUser -Name $u -NoPassword -ErrorAction Stop | Out-Null
                     }
-                    Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq 'ccdcuser1') @passwordArgs
-                    Write-Status -Level Success "$u ready"
+                    Set-UserPassword -Username $u -PasswordPrompt "Enter password for ${u}: " -AddToAdmins:($u -eq 'ccdcuser1') -State $State @passwordArgs
+                    Write-Status -Level Success "$u ready" -State $State
                 } catch {
                     $failed++
-                    Write-Status -Level Warning "Local user '$u' not set up: $($_.Exception.Message)" -LogMessage "Local user '$u' setup failed: $($_.Exception.Message)"
+                    Write-Status -Level Warning "Local user '$u' not set up: $($_.Exception.Message)" -LogMessage "Local user '$u' setup failed: $($_.Exception.Message)" -State $State
                 }
             }
         }
 
         if ($failed -gt 0) {
-            Set-OperationStatus 'Add Competition Users' "Failed for $failed account(s) - see log"
+            Set-OperationStatus 'Add Competition Users' "Failed for $failed account(s) - see log" -State $State
             throw "Failed to create or configure $failed competition account(s)"
         }
-        Set-OperationStatus 'Add Competition Users' 'Executed successfully'
+        Set-OperationStatus 'Add Competition Users' 'Executed successfully' -State $State
     }
 }

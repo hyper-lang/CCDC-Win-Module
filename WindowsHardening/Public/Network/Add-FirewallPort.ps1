@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 # Add-FirewallPort.ps1 - Opens extra inbound ports on an already-hardened firewall,
 # plus the shared rule helpers Set-FirewallConfiguration uses.
@@ -8,9 +8,13 @@
     Returns a short description for a port from ports.json, or a fallback name.
 #>
 function Get-FirewallPortDescription {
-    param([int]$Port)
+    param([int]$Port,
+        [object]$State = $null
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    $portsData = $script:HardeningContext.Ports
+
+    $portsData = $State.Context.Ports
     if ($null -ne $portsData -and $null -ne $portsData.ports -and $null -ne $portsData.ports."$Port") {
         return $portsData.ports."$Port".description
     }
@@ -56,7 +60,7 @@ function Set-FirewallAllowRule {
         $existing[0] | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol $Protocol -LocalPort $Port -ErrorAction Stop
         if ($existing.Count -gt 1) {
             $existing[1..($existing.Count - 1)] | Remove-NetFirewallRule -ErrorAction Stop
-            Write-Status "Removed $($existing.Count - 1) duplicate '$displayName' rule(s)" -LogOnly
+            Write-Status "Removed $($existing.Count - 1) duplicate '$displayName' rule(s)" -LogOnly -State $State
         }
         $status = 'Updated'
     } else {
@@ -79,7 +83,7 @@ function Set-FirewallAllowRule {
     )
     foreach ($rule in $blocking) {
         $message = "Enabled Block rule '$($rule.DisplayName)' also matches $Protocol $Port and overrides the Allow rule"
-        Write-Status -Level Warning "$message" -LogMessage $message
+        Write-Status -Level Warning "$message" -LogMessage $message -State $State
     }
 
     return $status
@@ -118,24 +122,30 @@ function Add-FirewallPort {
 
         [ValidateSet('TCP', 'UDP', 'Both')]
         [string]$Protocol
+    ,
+        [object]$State = $null
+    ,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     $portList = ConvertTo-PortList -Ports $Ports
     if ($portList.Count -eq 0) {
         throw "No ports given"
     }
 
-    Invoke-HardeningOperation -OperationName "Add Firewall Ports" -ScriptBlock {
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Add Firewall Ports" -ScriptBlock {
         if (-not $Protocol) {
-            $Protocol = if ($script:HardeningContext.OS.IsDomainController) { 'Both' } else { 'TCP' }
+            $Protocol = if ($State.Context.OS.IsDomainController) { 'Both' } else { 'TCP' }
         }
         $protocols = if ($Protocol -eq 'Both') { @('TCP', 'UDP') } else { @($Protocol) }
 
         foreach ($port in ($portList | Sort-Object -Unique)) {
-            $description = Get-FirewallPortDescription -Port $port
+            $description = Get-FirewallPortDescription -Port $port -State $State
             foreach ($proto in $protocols) {
                 $status = Set-FirewallAllowRule -Port $port -Protocol $proto
-                Write-Status -Level Success -Tag ($status.ToUpper()) "Allow $proto $port ($description)" -LogMessage "$status inbound $proto rule for port $port ($description)"
+                Write-Status -Level Success -Tag ($status.ToUpper()) "Allow $proto $port ($description)" -LogMessage "$status inbound $proto rule for port $port ($description)" -State $State
             }
         }
     }

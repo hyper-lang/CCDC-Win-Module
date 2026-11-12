@@ -42,7 +42,9 @@ function Write-Status {
 
         [switch]$NoLog,
 
-        [string]$LogMessage
+        [string]$LogMessage,
+
+        [object]$State = $null
     )
 
     if (-not $LogOnly) {
@@ -54,12 +56,26 @@ function Write-Status {
             default   { 'White' }
         }
         $label = if ($Tag) { $Tag } else { $Level.ToUpper() }
-        Write-Host "  [$label] $Message" -ForegroundColor $color
+        $syncRoot = if ($State.SyncRoot) { $State.SyncRoot } else { $null }
+        if ($syncRoot) { [System.Threading.Monitor]::Enter($syncRoot) }
+        try {
+            Write-Host "  [$label] $Message" -ForegroundColor $color
+        } finally {
+            if ($syncRoot) { [System.Threading.Monitor]::Exit($syncRoot) }
+        }
     }
 
     if (-not $NoLog) {
         $text = if ($PSBoundParameters.ContainsKey('LogMessage')) { $LogMessage } else { $Message }
         if ($Tag) { $text = "[$Tag] $text" }
-        Write-Log -Level $Level.ToUpper() -Message $text
+        if ($State -and $State.LogFile) {
+            # The caller/coordinator drains these records through Flush-HardeningLog,
+            # which serializes file writes for this run.
+            $State.LogEvents.Enqueue([pscustomobject]@{
+                Timestamp = [datetime]::UtcNow
+                Level = $Level
+                Message = $text
+            })
+        }
     }
 }

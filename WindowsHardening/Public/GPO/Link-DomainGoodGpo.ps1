@@ -1,9 +1,14 @@
-function Link-DomainGoodGpo {
+﻿function Link-DomainGoodGpo {
     [CmdletBinding()]
-    param([Parameter(Mandatory=$true)][string]$BackupRoot)
+    param([Parameter(Mandatory=$true)][string]$BackupRoot,
+        [object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName 'Link Domain Good-GPO' -ScriptBlock {
-        Invoke-CcdcGpoLinkOperation -Name 'Domain Good-GPO' -BackupRoot $BackupRoot -Target (Get-CcdcDomainRootDn) -Enforced
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName 'Link Domain Good-GPO' -ScriptBlock {
+        Invoke-CcdcGpoLinkOperation -Name 'Domain Good-GPO' -BackupRoot $BackupRoot -Target (Get-CcdcDomainRootDn) -Enforced -State $State
         # The bundled GPO enables FIPS mode, which blocks the MD5 that New-Password (Zulu,
         # -SaltPhrase) relies on. Set it to 0 rather than removing it: registry policy values
         # stay behind, so machines that already applied FIPS have to be switched back.

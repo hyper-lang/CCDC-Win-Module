@@ -18,9 +18,14 @@
 
         [Parameter(Mandatory=$true)]
         [string]$IP
+    ,
+        [object]$State = $null,
+        [string]$StepLabel
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Configure Splunk" -ScriptBlock {
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Configure Splunk" -ScriptBlock {
         $downloadURL = "https://raw.githubusercontent.com/BYU-CCDC/public-ccdc-resources/main/splunk/splunk.ps1"
         $splunkScript = Join-Path $env:TEMP 'splunk.ps1'
 
@@ -44,20 +49,20 @@
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $downloadURL -OutFile $splunkScript -UseBasicParsing -ErrorAction Stop
-            Write-Status -Level Success "Downloaded Splunk installation script" -LogOnly
+            Write-Status -Level Success "Downloaded Splunk installation script" -LogOnly -State $State
 
-            Write-Status "Running splunk.ps1 (forwarding to ${indexerIP}:9997)$(if ($splunkArgs.WindowsVersion) { " for $($splunkArgs.WindowsVersion)" })"
+            Write-Status "Running splunk.ps1 (forwarding to ${indexerIP}:9997)$(if ($splunkArgs.WindowsVersion) { " for $($splunkArgs.WindowsVersion)" })" -State $State
             $global:LASTEXITCODE = 0
             & $splunkScript @splunkArgs
             # splunk.ps1 uses 'exit 1' for its own errors. A non-zero code can also be left
             # over from a splunk.exe call that did not matter, so report it without failing.
             if ($LASTEXITCODE -ne 0) {
-                Write-Status -Level Warning "splunk.ps1 finished with exit code $LASTEXITCODE - check its output above"
+                Write-Status -Level Warning "splunk.ps1 finished with exit code $LASTEXITCODE - check its output above" -State $State
             } else {
-                Write-Status -Level Success "Splunk installation completed" -LogOnly
+                Write-Status -Level Success "Splunk installation completed" -LogOnly -State $State
             }
         } catch {
-            Write-Status -Level Error "Splunk installation failed: $($_.Exception.Message)"
+            Write-Status -Level Error "Splunk installation failed: $($_.Exception.Message)" -State $State
             throw
         }
     }

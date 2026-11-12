@@ -77,40 +77,43 @@
 
         [Alias('srdp')]
         [switch]$SkipRDP
+    ,
+        [object]$State = $null
     )
 
-    Write-Banner "Network & Remote-Access Hardening"
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+    Initialize-System -State $State
+
+    Write-Banner "Network & Remote-Access Hardening" -State $State
 
     # Step 1: Firewall
-    $script:NextStepLabel = 'Network 1/3'
-    Set-FirewallConfiguration -NonInteractive:$NonInteractive -Prompt:$Prompt -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort
+    Set-FirewallConfiguration -NonInteractive:$NonInteractive -Prompt:$Prompt -FirewallPorts $FirewallPorts -AdditionalPorts $AdditionalPorts -PreserveManagementPort:$PreserveManagementPort -State $State -StepLabel 'Network 1/3'
 
     # Step 2: Restrict RPC after firewall configuration has enabled its AD rules.
-    $script:NextStepLabel = 'Network 2/3'
-    Mitigate-ZeroLogon
+    Mitigate-ZeroLogon -State $State -StepLabel 'Network 2/3'
 
     # Step 3: Remote management teardown
     if (-not $SkipRemoteManagement) {
-        $script:NextStepLabel = 'Network 3/3'
         if ($PreserveManagementPort) {
             # Running over WinRM - keep WinRM alive, still disable RDP unless caller opts out
             if ($SkipRDP) {
-                Remove-RemoteManagement -SkipWinRM -SkipRDP
+                Remove-RemoteManagement -SkipWinRM -SkipRDP -State $State -StepLabel 'Network 3/3'
             } else {
-                Remove-RemoteManagement -SkipWinRM
+                Remove-RemoteManagement -SkipWinRM -State $State -StepLabel 'Network 3/3'
             }
         } else {
             if ($SkipRDP) {
-                Remove-RemoteManagement -SkipRDP
+                Remove-RemoteManagement -SkipRDP -State $State -StepLabel 'Network 3/3'
             } else {
-                Remove-RemoteManagement
+                Remove-RemoteManagement -State $State -StepLabel 'Network 3/3'
             }
         }
     } else {
         Write-Host ""
-        Write-Status -Level Skip -Tag 'Network 3/3' "SKIPPED - remote management teardown (-SkipRemoteManagement)" -LogMessage "Invoke-NetworkHardening: Remove-RemoteManagement skipped"
+        Write-Status -Level Skip -Tag 'Network 3/3' "SKIPPED - remote management teardown (-SkipRemoteManagement)" -LogMessage "Invoke-NetworkHardening: Remove-RemoteManagement skipped" -State $State
     }
 
     Write-Host ""
-    Write-Status -Tag Network "Done." -LogMessage "Invoke-NetworkHardening completed"
+    Write-Status -Tag Network "Done." -LogMessage "Invoke-NetworkHardening completed" -State $State
+    Flush-HardeningLog -State $State
 }

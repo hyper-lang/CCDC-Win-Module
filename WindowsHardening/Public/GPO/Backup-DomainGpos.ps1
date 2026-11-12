@@ -1,4 +1,4 @@
-function Backup-DomainGpos {
+﻿function Backup-DomainGpos {
     <#
     .SYNOPSIS
         Backs up all current domain GPOs and records where they are linked.
@@ -14,7 +14,11 @@ function Backup-DomainGpos {
     [CmdletBinding()]
     param(
         [string]$Path
+    ,
+        [object]$State = $null
     )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     if (-not (Get-Module -Name GroupPolicy)) {
         Import-Module GroupPolicy -ErrorAction Stop
@@ -24,7 +28,7 @@ function Backup-DomainGpos {
     }
 
     if (-not $Path) {
-        $Path = $script:HardeningContext.LogPath
+        $Path = $State.Context.LogPath
     }
     if (-not $Path) {
         throw 'No GPO backup path was provided and the hardening log path is unavailable.'
@@ -33,14 +37,14 @@ function Backup-DomainGpos {
     $backupPath = Join-Path $Path "DomainGPOBackup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
     New-Item -Path $backupPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
 
-    Write-Status "Backing up all domain GPOs to $backupPath"
+    Write-Status "Backing up all domain GPOs to $backupPath" -State $State
     $backedUpGpos = @(Backup-GPO -All -Path $backupPath `
         -Comment "Pre-hardening backup created by Invoke-DomainHardening on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')" `
         -ErrorAction Stop)
     if ($backedUpGpos.Count -eq 0) {
-        Write-Status -Level Warning 'The domain contains no GPOs to back up' -LogMessage "No GPOs were returned by Backup-GPO; backup directory: $backupPath"
+        Write-Status -Level Warning 'The domain contains no GPOs to back up' -LogMessage "No GPOs were returned by Backup-GPO; backup directory: $backupPath" -State $State
     } else {
-        Write-Status -Level Success "Backed up $($backedUpGpos.Count) domain GPO(s) to $backupPath"
+        Write-Status -Level Success "Backed up $($backedUpGpos.Count) domain GPO(s) to $backupPath" -State $State
     }
 
     # Backup-GPO saves policy settings, but GPO link placement and link options
@@ -73,10 +77,10 @@ function Backup-DomainGpos {
         }
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $backupPath 'DomainGpoLinks.json') `
             -Encoding UTF8 -ErrorAction Stop
-        Write-Status -Level Success "Saved domain GPO link inventory to $(Join-Path $backupPath 'DomainGpoLinks.json')"
+        Write-Status -Level Success "Saved domain GPO link inventory to $(Join-Path $backupPath 'DomainGpoLinks.json')" -State $State
     } catch {
         Write-Status -Level Warning "Could not save the GPO link inventory (GPO contents are backed up): $($_.Exception.Message)" `
-            -LogMessage "GPO link inventory failed for $backupPath : $($_.Exception.Message)"
+            -LogMessage "GPO link inventory failed for $backupPath : $($_.Exception.Message)" -State $State
     }
 
     return $backupPath

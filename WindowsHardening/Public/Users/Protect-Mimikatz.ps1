@@ -1,6 +1,8 @@
-function Protect-Mimikatz {
+﻿function Protect-Mimikatz {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null, [string]$StepLabel)
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
+
 
     $mimikatzCompatible = @(
         "Client7", "Client8", "Client10", "Client11",
@@ -8,17 +10,17 @@ function Protect-Mimikatz {
         "Server2016", "Server2019", "Server2022", "Server2025"
     )
 
-    Invoke-HardeningOperation -OperationName "Patch Mimikatz" -OSCompatibility $mimikatzCompatible -ProgressMessage "Disabling WDigest credential storage to prevent Mimikatz credential extraction" -ScriptBlock {
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Patch Mimikatz" -OSCompatibility $mimikatzCompatible -ProgressMessage "Disabling WDigest credential storage to prevent Mimikatz credential extraction" -ScriptBlock {
         $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest"
 
-        Write-Status "This patch disables WDigest credential storage (UseLogonCredential = 0)"
-        Write-Status "This prevents Mimikatz from extracting plaintext credentials from memory"
+        Write-Status "This patch disables WDigest credential storage (UseLogonCredential = 0)" -State $State
+        Write-Status "This prevents Mimikatz from extracting plaintext credentials from memory" -State $State
 
-        Set-RegistryValue -Path $registryPath -Name "UseLogonCredential" -Value 0 -PropertyType "DWord" -OperationName "Patch Mimikatz" -CreatePathIfMissing
+        Set-RegistryValue -Path $registryPath -Name "UseLogonCredential" -Value 0 -PropertyType "DWord" -OperationName "Patch Mimikatz" -CreatePathIfMissing -State $State
 
-        Write-Status -Level Warning "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0"
+        Write-Status -Level Warning "System restart recommended for changes to take full effect" -LogMessage "Mimikatz patch (WDigest) applied - UseLogonCredential set to 0" -State $State
     }
-        Invoke-HardeningOperation -OperationName "Audit SeDebugPrivilege" -ProgressMessage "Checking which users have the SeDebugPrivilege right" -ScriptBlock {
+        Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Audit SeDebugPrivilege" -ProgressMessage "Checking which users have the SeDebugPrivilege right" -ScriptBlock {
         check-SeDebugPrivilege
     }
 }
@@ -39,10 +41,10 @@ function Check-SeDebugPrivilege {
         if ($results) {
             Write-Host ($results | Out-String)
             Write-Status -Level Warning "SeDebugPrivilege assignments found." `
-                -LogMessage ($results | Out-String)
+                -LogMessage ($results | Out-String) -State $State
         }
         else {
-            Write-Status "No SeDebugPrivilege assignments found."
+            Write-Status "No SeDebugPrivilege assignments found." -State $State
         }
     }
     finally {

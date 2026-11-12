@@ -1,4 +1,4 @@
-# The built-in Administrator account (RID 500), matched by SID so a renamed account is
+﻿# The built-in Administrator account (RID 500), matched by SID so a renamed account is
 # still protected. Groups nested in the admin groups (including Domain Admins and
 # Enterprise Admins inside Administrators) are removed on purpose.
 function Test-BuiltInAdminPrincipal {
@@ -8,14 +8,18 @@ function Test-BuiltInAdminPrincipal {
 
 function Remove-AdminUsers {
     [CmdletBinding()]
-    param()
+    param([object]$State = $null,
+        [string]$StepLabel
+    )
+    if (-not $State) { $State = Resolve-HardeningState -State $State }
 
-    Invoke-HardeningOperation -OperationName "Remove Admin Users" -ScriptBlock {
-        $isDC = $script:HardeningContext.OS.IsDomainController
+
+    Invoke-HardeningOperation -State $State -StepLabel $StepLabel -OperationName "Remove Admin Users" -ScriptBlock {
+        $isDC = $State.Context.OS.IsDomainController
 
         if ($isDC) {
-            Write-Status "Cleaning administrator groups on the domain (Domain Admins, Enterprise Admins, Administrators)"
-            Write-Status -Level Warning "Afterwards, add back any users the competition scenario needs as admins" -NoLog
+            Write-Status "Cleaning administrator groups on the domain (Domain Admins, Enterprise Admins, Administrators)" -State $State
+            Write-Status -Level Warning "Afterwards, add back any users the competition scenario needs as admins" -NoLog -State $State
 
             $ExclusionList = @("Administrator", "ccdcuser3")
 
@@ -25,7 +29,7 @@ function Remove-AdminUsers {
                     $adminMembers = Get-ADGroupMember -Identity $GroupName -ErrorAction SilentlyContinue
 
                     if ($null -eq $adminMembers -or $adminMembers.Count -eq 0) {
-                        Write-Status "${GroupName} group is empty (Unexpected)" -LogMessage "${GroupName} group is already empty"
+                        Write-Status "${GroupName} group is empty (Unexpected)" -LogMessage "${GroupName} group is already empty" -State $State
                     } else {
                         $removedCount = 0
                         foreach ($member in $adminMembers) {
@@ -33,30 +37,30 @@ function Remove-AdminUsers {
                                 $username = $member.SAMAccountName
 
                                 if ($ExclusionList -contains $username -or (Test-BuiltInAdminPrincipal $member)) {
-                                    Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group"
+                                    Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group" -State $State
                                     continue
                                 }
 
                                 Remove-ADGroupMember -Identity $GroupName -Members $username -Confirm:$false -ErrorAction Stop
 
-                                Write-Status -Level Success "Removed ${username} from ${GroupName}"
+                                Write-Status -Level Success "Removed ${username} from ${GroupName}" -State $State
                                 $removedCount++
                             } catch {
                                 $msg = $_.Exception.Message
-                                Write-Status -Level Warning "Could not remove $($member.Name): $msg" -LogMessage "Could not remove $($member.Name) from ${GroupName}: $msg"
+                                Write-Status -Level Warning "Could not remove $($member.Name): $msg" -LogMessage "Could not remove $($member.Name) from ${GroupName}: $msg" -State $State
                             }
                         }
-                        Write-Status "Removed $removedCount unauthorized admin(s)"
+                        Write-Status "Removed $removedCount unauthorized admin(s)" -State $State
                     }
 
-                    Write-Status -Level Success "Administrator group hardening complete" -LogMessage "Administrators group reset completed"
+                    Write-Status -Level Success "Administrator group hardening complete" -LogMessage "Administrators group reset completed" -State $State
                 } catch {
-                    Write-Status -Level Error "Failed to harden Administrators: $($_.Exception.Message)"
+                    Write-Status -Level Error "Failed to harden Administrators: $($_.Exception.Message)" -State $State
                     throw
                 }
             }
         } else {
-            Write-Status "Cleaning local Administrators group"
+            Write-Status "Cleaning local Administrators group" -State $State
 
             $ExclusionList = @("Administrator", "ccdcuser1")
 
@@ -65,7 +69,7 @@ function Remove-AdminUsers {
                 $adminMembers = Get-LocalGroupMember -Group $GroupName -ErrorAction SilentlyContinue
 
                 if ($null -eq $adminMembers -or $adminMembers.Count -eq 0) {
-                    Write-Status "${GroupName} group is empty (Unexpected)" -LogMessage "${GroupName} group is already empty"
+                    Write-Status "${GroupName} group is empty (Unexpected)" -LogMessage "${GroupName} group is already empty" -State $State
                 } else {
                     $removedCount = 0
                     foreach ($member in $adminMembers) {
@@ -73,25 +77,25 @@ function Remove-AdminUsers {
                             $username = $member.Name.Split('\')[-1]
 
                             if ($ExclusionList -contains $username -or (Test-BuiltInAdminPrincipal $member)) {
-                                Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group"
+                                Write-Status -Level Skip "Skipping ${username} (Protected Admin)" -LogMessage "Skipped removal of ${username} from ${GroupName} group" -State $State
                                 continue
                             }
 
                             Remove-LocalGroupMember -Group $GroupName -Member $member -Confirm:$false -ErrorAction Stop
 
-                            Write-Status -Level Success "Removed ${username} from ${GroupName}"
+                            Write-Status -Level Success "Removed ${username} from ${GroupName}" -State $State
                             $removedCount++
                         } catch {
                             $msg = $_.Exception.Message
-                            Write-Status -Level Warning "Could not remove $($member.Name): $msg" -LogMessage "Could not remove $($member.Name) from ${GroupName}: $msg"
+                            Write-Status -Level Warning "Could not remove $($member.Name): $msg" -LogMessage "Could not remove $($member.Name) from ${GroupName}: $msg" -State $State
                         }
                     }
-                    Write-Status "Removed $removedCount unauthorized admin(s)"
+                    Write-Status "Removed $removedCount unauthorized admin(s)" -State $State
                 }
 
-                Write-Status -Level Success "Administrator group hardening complete" -LogMessage "Administrators group reset completed"
+                Write-Status -Level Success "Administrator group hardening complete" -LogMessage "Administrators group reset completed" -State $State
             } catch {
-                Write-Status -Level Error "Failed to harden Administrators: $($_.Exception.Message)"
+                Write-Status -Level Error "Failed to harden Administrators: $($_.Exception.Message)" -State $State
                 throw
             }
         }
