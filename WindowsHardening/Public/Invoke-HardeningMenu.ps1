@@ -52,6 +52,7 @@
         @{ Key = '16'; Section = 'L'; Label = 'Configure Splunk' }
         @{ Key = '17'; Section = 'P'; Label = 'Install EternalBlue Patch' }
         @{ Key = 'A';  Label = 'Re-run setup (new log file)' }
+        @{ Key = 'B';  Label = 'Browse folders and run a function' }
         @{ Key = '0';  Label = 'Print Execution Summary' }
     )
 
@@ -100,6 +101,67 @@
         $listed + $hidden
     }
 
+    function Invoke-FolderBrowser {
+        $publicPath = Join-Path $PSScriptRoot 'Public'
+        $devPath = Join-Path $PSScriptRoot 'Dev'
+        $folders = @(
+            Get-ChildItem -Path $publicPath -Directory -ErrorAction SilentlyContinue |
+                Where-Object Name -ne 'GPO' |
+                Sort-Object Name |
+                ForEach-Object { [pscustomobject]@{ Name = "Public/$($_.Name)"; Path = $_.FullName } }
+        )
+        if (Test-Path -LiteralPath $devPath -PathType Container) {
+            $folders += [pscustomobject]@{ Name = 'Dev'; Path = $devPath }
+        }
+
+        $folderOptions = @($folders | ForEach-Object {
+            @{ Key = $_.Name; Label = $_.Name; Value = $_.Path }
+        })
+        $folderPath = Read-Choice -Title 'Browse folders' -Prompt 'Folder' -Options $folderOptions -AllowQuit -QuitLabel 'Back'
+        if (-not $folderPath) { return }
+
+        $files = @(Get-ChildItem -Path $folderPath -Filter '*.ps1' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+        if (-not $files) {
+            Write-Status -Level Warning 'No PowerShell scripts found in this folder.' -NoLog
+            return
+        }
+        $scriptOptions = @($files | ForEach-Object {
+            $functionName = $_.BaseName
+            @{ Key = $functionName; Label = $functionName; Value = $functionName }
+        })
+        $functionName = Read-Choice -Title (Split-Path $folderPath -Leaf) -Prompt 'Function' -Options $scriptOptions -AllowQuit -QuitLabel 'Back'
+        if (-not $functionName) { return }
+
+        $command = Get-Command -Name $functionName -CommandType Function -ErrorAction SilentlyContinue
+        if (-not $command) {
+            Write-Status -Level Error "Function '$functionName' is not loaded in this module." -NoLog
+            return
+        }
+
+        $arguments = @{}
+        foreach ($parameter in $command.Parameters.Values) {
+            if (-not $parameter.Attributes.Mandatory -or $parameter.Name -in @('Force','Confirm','WhatIf')) { continue }
+            if ($parameter.ParameterType -eq [switch]) {
+                $answer = Read-YesNo -Message "Enable -$($parameter.Name)? (y/n) "
+                if ($answer -eq 'y') { $arguments[$parameter.Name] = $true }
+                continue
+            }
+            if ($parameter.ParameterType -eq [securestring]) {
+                $arguments[$parameter.Name] = Read-Host "Enter -$($parameter.Name)" -AsSecureString
+                continue
+            }
+            $value = Read-Host "Enter -$($parameter.Name)"
+            if ($parameter.ParameterType.IsArray) {
+                $elementType = $parameter.ParameterType.GetElementType()
+                $arguments[$parameter.Name] = @($value -split '\s*,\s*' | ForEach-Object { [System.Management.Automation.LanguagePrimitives]::ConvertTo($_, $elementType) })
+            } else {
+                $arguments[$parameter.Name] = [System.Management.Automation.LanguagePrimitives]::ConvertTo($value, $parameter.ParameterType)
+            }
+        }
+        Write-Banner "Run $functionName" -Style Inline -Color Magenta -Log
+        & $functionName @arguments
+    }
+
     function Invoke-MenuAction {
         param(
             [string]$Choice
@@ -115,6 +177,7 @@
         switch ($Choice.ToUpper()) {
             '0'  { Show-OperationSummary }
             'A'  { Initialize-System -Force }
+            'B'  { Invoke-FolderBrowser }
 
             # -- Orchestrators ------------------------------------------------
             '1'  {
