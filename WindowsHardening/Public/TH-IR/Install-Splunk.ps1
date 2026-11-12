@@ -46,13 +46,16 @@
             Invoke-WebRequest -Uri $downloadURL -OutFile $splunkScript -UseBasicParsing -ErrorAction Stop
             Write-Status -Level Success "Downloaded Splunk installation script" -LogOnly
 
+            # The upstream script maps Windows Server 2016 to $10_0_2_x64, but
+            # never defines that variable. Supply its intended 10.0.2 x64 URL
+            # in this scope so the child script can resolve it.
+            Set-Variable -Name '10_0_2_x64' -Scope Local -Value 'https://download.splunk.com/products/universalforwarder/releases/10.0.2/windows/splunkforwarder-10.0.2-e2d18b4767e9-windows-x64.msi'
+
             Write-Status "Running splunk.ps1 (forwarding to ${indexerIP}:9997)$(if ($splunkArgs.WindowsVersion) { " for $($splunkArgs.WindowsVersion)" })"
             $global:LASTEXITCODE = 0
             & $splunkScript @splunkArgs
-            # splunk.ps1 uses 'exit 1' for its own errors. A non-zero code can also be left
-            # over from a splunk.exe call that did not matter, so report it without failing.
             if ($LASTEXITCODE -ne 0) {
-                Write-Status -Level Warning "splunk.ps1 finished with exit code $LASTEXITCODE - check its output above"
+                throw "splunk.ps1 failed with exit code $LASTEXITCODE"
             } else {
                 Write-Status -Level Success "Splunk installation completed" -LogOnly
             }
